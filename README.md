@@ -274,3 +274,35 @@ To install: download the APK on the phone, tap it, allow "install unknown apps"
 for your browser or file manager when prompted, then install. Because it is not
 signed for the Play Store, Android will show a warning — that is expected for
 any sideloaded build.
+
+Every push to `main` also builds the APK on GitHub's runners
+(`.github/workflows/build-apk.yml`) and attaches it to the run as a downloadable
+artifact, so a build is possible without a local Android toolchain.
+
+## The four modules
+
+* **Face Analyze** — camera → 468-landmark mesh → three scored measurements.
+* **Compare My Progress** — every finished scan is stored on the device (a JSON
+  file in the app's private support directory); any two are compared metric by
+  metric, oldest against newest by default.
+* **Friend VS Mode** — the same comparison arithmetic, framed as two people with
+  a one-line verdict. One implementation serves both, so progress and versus can
+  never disagree about a score.
+* **Looksmaxing Wiki & Saved Reports** — eight evidence-graded notes on what a 2D
+  photo can and cannot tell you, plus every saved scan with per-entry delete.
+
+## Failure handling
+
+Detection has an 8-second deadline at two levels — around ML Kit itself in
+`FaceMeshReader` and around the whole read in `AnalysisController` — so a wedged
+platform channel lands on the readable error panel instead of a scanning
+animation that never stops. Zero landmarks, a platform exception and a timeout
+all produce the same copy, which lives in one constant
+(`faceNotDetectedMessage`).
+
+EXIF orientation is parsed straight out of the JPEG's APP1 segment
+(`lib/ml/exif_orientation.dart`): the tag decides which side is the upright
+height — the unit every measurement is divided by — and, if a detector ever hands
+back sensor-space points, those are rotated upright too. The rotation is only
+applied when the geometry proves it is needed, because rotating an already-upright
+mesh would tilt every angle in the app.

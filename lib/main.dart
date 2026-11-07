@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'data/scan_history.dart';
 import 'state/analysis_controller.dart';
-import 'ui/camera_screen.dart';
+import 'ui/home_screen.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -28,13 +29,21 @@ class FacialAnalysisApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<AnalysisController>(
-      create: (BuildContext context) => AnalysisController(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ScanHistory>(
+          create: (BuildContext context) => ScanHistory(),
+        ),
+        ChangeNotifierProvider<AnalysisController>(
+          create: (BuildContext context) =>
+              AnalysisController(history: context.read<ScanHistory>()),
+        ),
+      ],
       child: MaterialApp(
         title: 'Face Geometry',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
-        home: const CameraScreen(),
+        home: const HomeScreen(),
       ),
     );
   }

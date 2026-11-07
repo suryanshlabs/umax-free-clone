@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../core/report.dart';
 import '../state/analysis_controller.dart';
+import 'camera_screen.dart';
 import 'theme.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/score_ring.dart';
@@ -70,9 +71,16 @@ class ResultsScreen extends StatelessWidget {
                   FilledButton(
                     onPressed: () {
                       controller.reset();
-                      Navigator.of(
-                        context,
-                      ).popUntil((Route<dynamic> route) => route.isFirst);
+                      final NavigatorState navigator = Navigator.of(context);
+                      navigator.popUntil(
+                        (Route<dynamic> route) => route.isFirst,
+                      );
+                      navigator.push(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) =>
+                              const CameraScreen(),
+                        ),
+                      );
                     },
                     child: const Text('Scan again'),
                   ),

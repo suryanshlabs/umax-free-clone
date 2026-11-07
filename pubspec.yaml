@@ -23,6 +23,10 @@ dependencies:
   # Local state management for the analysis pipeline.
   provider: ^6.1.2
 
+  # Writes the saved-scan history to the app's private support directory; no
+  # storage permission is involved on any supported Android version.
+  path_provider: ^2.1.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

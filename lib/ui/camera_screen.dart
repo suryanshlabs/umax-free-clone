@@ -277,6 +277,12 @@ class _CameraScreenState extends State<CameraScreen>
                 child: Row(
                   children: <Widget>[
                     _CircleButton(
+                      icon: Icons.arrow_back_rounded,
+                      tooltip: 'Back to home',
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                    const SizedBox(width: 10),
+                    _CircleButton(
                       icon: Icons.flip_camera_ios_rounded,
                       tooltip: 'Switch camera',
                       onPressed: ready && _cameras.length > 1

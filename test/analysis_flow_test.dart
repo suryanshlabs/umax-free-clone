@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:facial_analysis/core/facial_analysis_service.dart';
+import 'package:facial_analysis/ml/face_mesh_source.dart';
 import 'package:facial_analysis/state/analysis_controller.dart';
 import 'package:facial_analysis/ui/results_screen.dart';
 import 'package:facial_analysis/ui/theme.dart';
@@ -6,7 +9,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:facial_analysis/data/scan_history.dart';
+
 import 'support/fake_mesh_source.dart';
+
+/// A detector that never completes, standing in for a wedged platform channel.
+class _HangingSource implements FaceMeshSource {
+  @override
+  Future<FaceMeshReading?> readFile(String path, {double? imageAspectRatio}) =>
+      Completer<FaceMeshReading?>().future;
+
+  @override
+  Future<void> dispose() async {}
+}
 
 void main() {
   group('AnalysisController', () {
@@ -41,7 +56,47 @@ void main() {
 
       expect(controller.phase, AnalysisPhase.failed);
       expect(controller.report, isNull);
-      expect(controller.errorMessage, contains('No face'));
+      expect(controller.errorMessage, faceNotDetectedMessage);
+      controller.dispose();
+    });
+
+    test('gives up on a detector that never answers', () async {
+      final AnalysisController controller = AnalysisController(
+        reader: _HangingSource(),
+        timeout: const Duration(milliseconds: 40),
+      );
+
+      await controller.analyse(
+        '/tmp/photo.jpg',
+        minimumVisibleTime: Duration.zero,
+      );
+
+      expect(controller.phase, AnalysisPhase.failed);
+      expect(controller.report, isNull);
+      expect(controller.errorMessage, faceNotDetectedMessage);
+      controller.dispose();
+    });
+
+    test('records a finished scan in the history store', () async {
+      final ScanHistory history = ScanHistory(
+        storage: MemoryScanHistoryStorage(),
+      );
+      await history.load();
+      final AnalysisController controller = AnalysisController(
+        reader: FakeFaceMeshSource(reading: syntheticReading()),
+        history: history,
+      );
+
+      await controller.analyse(
+        '/tmp/photo.jpg',
+        minimumVisibleTime: Duration.zero,
+      );
+
+      expect(history.scans, hasLength(1));
+      expect(
+        history.scans.single.overallScore,
+        controller.report!.overallScore,
+      );
       controller.dispose();
     });
 

@@ -6,6 +6,7 @@ import '../core/facial_analysis_service.dart';
 import '../core/metrics.dart';
 import '../core/report.dart';
 import '../core/scoring_engine.dart';
+import '../data/scan_history.dart';
 import '../ml/face_mesh_reader.dart';
 import '../ml/face_mesh_source.dart';
 
@@ -23,13 +24,26 @@ class AnalysisController extends ChangeNotifier {
     FaceMeshSource? reader,
     FacialAnalysisService service = const FacialAnalysisService(),
     ScoringEngine engine = const ScoringEngine(),
+    ScanHistory? history,
+    Duration timeout = pipelineTimeout,
   }) : _reader = reader ?? FaceMeshReader(),
        _service = service,
-       _engine = engine;
+       _engine = engine,
+       _history = history,
+       _timeout = timeout;
+
+  /// Hard ceiling on the whole detection step.
+  ///
+  /// The reader enforces its own deadline around ML Kit; this one also covers
+  /// any other [FaceMeshSource] and the file read, so a wedged platform channel
+  /// can never leave the scanning animation spinning with no way out.
+  static const Duration pipelineTimeout = Duration(seconds: 8);
 
   final FaceMeshSource _reader;
   final FacialAnalysisService _service;
   final ScoringEngine _engine;
+  final ScanHistory? _history;
+  final Duration _timeout;
 
   AnalysisPhase _phase = AnalysisPhase.idle;
   AnalysisReport? _report;
@@ -66,15 +80,11 @@ class AnalysisController extends ChangeNotifier {
 
     final Stopwatch stopwatch = Stopwatch()..start();
     try {
-      final FaceMeshReading? reading = await _reader.readFile(
-        path,
-        imageAspectRatio: imageAspectRatio,
-      );
+      final FaceMeshReading? reading = await _reader
+          .readFile(path, imageAspectRatio: imageAspectRatio)
+          .timeout(_timeout);
       if (reading == null) {
-        throw const FacialAnalysisException(
-          'No face was detected. Fill the guide with your face, keep your hair '
-          'out of your eyes, and make sure the room is lit from the front.',
-        );
+        throw const FacialAnalysisException(faceNotDetectedMessage);
       }
 
       final RawFaceMetrics metrics = _service.measure(reading.points);
@@ -97,7 +107,7 @@ class AnalysisController extends ChangeNotifier {
 
       await _holdAnimation(stopwatch, minimumVisibleTime);
 
-      _report = AnalysisReport(
+      final AnalysisReport enriched = AnalysisReport(
         overallScore: report.overallScore,
         grade: report.grade,
         gradeBlurb: report.gradeBlurb,
@@ -108,17 +118,23 @@ class AnalysisController extends ChangeNotifier {
         createdAt: report.createdAt,
         imagePath: report.imagePath,
       );
+      _report = enriched;
       _phase = AnalysisPhase.ready;
       notifyListeners();
+
+      // Saving must never turn a successful scan into an error screen; the
+      // store logs its own write failures.
+      await _history?.add(enriched);
+    } on TimeoutException {
+      await _holdAnimation(stopwatch, minimumVisibleTime);
+      _fail(faceNotDetectedMessage);
     } on FacialAnalysisException catch (error) {
       await _holdAnimation(stopwatch, minimumVisibleTime);
       _fail(error.message);
     } on Exception catch (error) {
       await _holdAnimation(stopwatch, minimumVisibleTime);
-      _fail(
-        'The scan could not be completed. Try again with your face fully in '
-        'frame and even lighting. ($error)',
-      );
+      _fail(faceNotDetectedMessage);
+      debugPrint('Analysis failed: $error');
     }
   }
 

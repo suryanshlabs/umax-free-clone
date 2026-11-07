@@ -1,5 +1,13 @@
 import '../core/vector.dart';
 
+/// The one message every "we could not get a mesh" path shows the user.
+///
+/// Detection returning nothing, detection throwing, and the detector hanging
+/// past its deadline are three different faults with exactly one piece of useful
+/// advice, so the copy lives in one place and cannot drift between them.
+const String faceNotDetectedMessage =
+    'Face not detected. Keep your face centered in bright light and try again';
+
 /// One face mesh, already converted into the uniform coordinate space the maths
 /// expects: x and y share one scale, so distances and angles are meaningful.
 class FaceMeshReading {
@@ -9,6 +17,7 @@ class FaceMeshReading {
     required this.faceHeightFraction,
     required this.faceCount,
     required this.coordinatesWereNormalised,
+    this.exifOrientationApplied = false,
   });
 
   /// All 468 landmarks, indexed exactly as MediaPipe indexes them.
@@ -26,6 +35,10 @@ class FaceMeshReading {
   /// True when the detector returned 0..1 coordinates that had to be
   /// aspect-corrected. Exposed for diagnostics; the maths does not use it.
   final bool coordinatesWereNormalised;
+
+  /// True when the landmarks had to be rotated out of the sensor's landscape
+  /// frame using the EXIF orientation tag. Diagnostics only.
+  final bool exifOrientationApplied;
 
   /// Rough "is the face big enough to measure" gate. Below ~15% of the frame
   /// the landmark spacing gets noisy enough to shift scores by several points.

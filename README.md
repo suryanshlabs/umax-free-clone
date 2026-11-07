@@ -236,3 +236,25 @@ because the camera plugin writes them there; the app never deletes them, so clea
 the app cache if you want them gone. `AnalysisReport.toShareText()` copies a text
 summary to the clipboard only when you tap **Copy** — the photo is never shared
 by the app itself.
+
+## License and building on this
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, ship it inside a paid app, strip
+the branding out, change every threshold. No attribution required, though a link
+back is appreciated. It is a measurement tool, not medical software; the
+"not a medical device" caveat in the app should stay.
+
+Where to start if you want to change behaviour:
+
+| I want to | Change |
+| --- | --- |
+| Make scoring stricter or looser | `lib/core/calibration.dart` — every threshold and weight lives there and nowhere else |
+| Change the advice shown | `lib/core/feedback_engine.dart` — score bands map to text, each item carries an evidence label |
+| Add a new measurement | `lib/core/facial_analysis_service.dart` (extend `RawFaceMetrics`), then score it in `scoring_engine.dart` and add a `MetricId` in `report.dart` |
+| Restyle the app | `lib/ui/theme.dart`, then the painters in `lib/ui/widgets/` |
+| Support another platform | implement `FaceMeshSource` in `lib/ml/` and hand it to `AnalysisController`; nothing in `lib/core/` changes |
+
+Pull requests are welcome. `flutter test` and `flutter analyze` are expected to be
+clean before a PR — the bundled CI workflow runs both on every push, and the
+detector is isolated behind an interface so new features can be tested without a
+phone.

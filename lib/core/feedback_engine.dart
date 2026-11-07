@@ -227,4 +227,156 @@ class FeedbackEngine {
     ];
     return advice;
   }
+
+  /// Isolates the lowest-scoring measurement and turns it into a dated plan.
+  ///
+  /// The routine library is keyed by [MetricId], not by score band, on purpose:
+  /// whichever metric is weakest, the plan needs the same four moves — make the
+  /// next photo comparable, change one habit that the evidence actually
+  /// supports, add a second cheap habit, then measure again. Only the middle two
+  /// change with the metric, so the shape of the roadmap stays honest.
+  ///
+  /// The runner-up is passed in only so the insight can say how far ahead of the
+  /// rest the weakness is; a 2-point gap is noise and is described as such.
+  WeaknessInsight coreWeakness(List<MetricResult> metrics) {
+    if (metrics.isEmpty) {
+      throw ArgumentError.value(metrics, 'metrics', 'needs one metric');
+    }
+    final List<MetricResult> ranked = List<MetricResult>.of(metrics)
+      ..sort((MetricResult a, MetricResult b) => a.score.compareTo(b.score));
+    final MetricResult weakest = ranked.first;
+    final MetricResult runnerUp = ranked.length > 1 ? ranked[1] : ranked.first;
+
+    return WeaknessInsight(
+      metricId: weakest.id,
+      title: weakest.title,
+      score: weakest.score,
+      rawValue: weakest.rawValue,
+      gapToNextBest: (runnerUp.score - weakest.score).clamp(0.0, 100.0),
+      why: _whyWeakest(weakest, runnerUp),
+      steps: _roadmapFor(weakest),
+    );
+  }
+
+  String _whyWeakest(MetricResult weakest, MetricResult runnerUp) {
+    final String gap = (runnerUp.score - weakest.score) <= 0.5
+        ? 'it is effectively tied with ${runnerUp.title} '
+              '(${runnerUp.score.toStringAsFixed(0)}/100), so treat this as one '
+              'of two equal limits rather than a single flaw'
+        : 'it sits ${(runnerUp.score - weakest.score).toStringAsFixed(0)} points '
+              'below your next measurement, ${runnerUp.title} '
+              '(${runnerUp.score.toStringAsFixed(0)}/100), which makes it the '
+              'single biggest drag on the total';
+    return '${weakest.title} is your lowest score at '
+        '${weakest.score.toStringAsFixed(0)}/100, and $gap. Because the overall '
+        'number is a weighted mean, this is the measurement where the smallest '
+        'real change moves the total the most. It is worth saying plainly: '
+        'nothing in the plan below changes bone. It changes the soft tissue, the '
+        'fluid, the posture and the photo, which is where the headroom actually '
+        'is.';
+  }
+
+  List<RoadmapStep> _roadmapFor(MetricResult metric) {
+    final List<RoadmapStep> habits = switch (metric.id) {
+      MetricId.eyeSymmetry => _symmetryHabits,
+      MetricId.jawline => _jawlineHabits,
+      MetricId.facialThirds => _thirdsHabits,
+    };
+    final String raw = metric.rawValue;
+    return <RoadmapStep>[
+      RoadmapStep(
+        stage: RoadmapStage.now,
+        title: 'Shoot one comparison-grade photo today',
+        detail:
+            'Same room, same window light, phone vertical at eye level, 50-70 '
+            'cm away, neutral face, hair off the forehead. This is your baseline '
+            'frame, and every later step is judged against it. Today your reading '
+            'is $raw.',
+        evidence: EvidenceStrength.measurement,
+      ),
+      ...habits,
+      const RoadmapStep(
+        stage: RoadmapStage.week5plus,
+        title: 'Re-scan and compare, same light',
+        detail:
+            'Open Compare My Progress and put this scan against the new one. '
+            'Read the three measurements, not the overall number: an overall '
+            'point or two of movement inside a single metric is indistinguishable '
+            'from capture noise. Three scans a week apart is a trend; one scan is '
+            'a snapshot.',
+        evidence: EvidenceStrength.measurement,
+      ),
+    ];
+  }
+
+  static const List<RoadmapStep> _symmetryHabits = <RoadmapStep>[
+    RoadmapStep(
+      stage: RoadmapStage.weeks1to2,
+      title: 'Sleep on your back, or rotate sides nightly',
+      detail:
+          'Sustained pressure from the same pillow side is the most commonly '
+          'cited environmental contributor to soft-tissue asymmetry. The evidence '
+          'is observational, so this is a free habit rather than a guaranteed '
+          'fix - but rotating sides costs nothing and removes one variable.',
+      evidence: EvidenceStrength.moderate,
+    ),
+    RoadmapStep(
+      stage: RoadmapStage.weeks3to4,
+      title: 'Chew on the non-dominant side first',
+      detail:
+          'Habitual one-sided chewing loads one masseter and one '
+          'temporomandibular joint harder, and dental research links it to '
+          'measurable lower-face asymmetry. Start every meal on the weaker side '
+          'for two weeks; that is the entire intervention.',
+      evidence: EvidenceStrength.moderate,
+    ),
+  ];
+
+  static const List<RoadmapStep> _jawlineHabits = <RoadmapStep>[
+    RoadmapStep(
+      stage: RoadmapStage.weeks1to2,
+      title: 'Hold a small deficit with enough protein',
+      detail:
+          'A jawline is mostly the fat layer over the mandible, and that layer '
+          'is not spot-reducible. A modest calorie deficit with adequate protein '
+          'and resistance training lowers fat everywhere; the face shows it early '
+          'because the layer there is thin. Aim for slow - about 0.5 percent of '
+          'bodyweight a week - so the face does not read as gaunt instead.',
+      evidence: EvidenceStrength.strong,
+    ),
+    RoadmapStep(
+      stage: RoadmapStage.weeks3to4,
+      title: 'Sleep 7-9 hours and keep sodium steady',
+      detail:
+          'Short sleep, alcohol and a salty evening all increase facial fluid '
+          'retention, which blurs the jaw-neck border for a day or two. This is '
+          'cosmetic and it reverses, so read it as photo hygiene rather than '
+          'progress: it is the difference between a soft and a clean border in a '
+          'picture taken tomorrow morning.',
+      evidence: EvidenceStrength.moderate,
+    ),
+  ];
+
+  static const List<RoadmapStep> _thirdsHabits = <RoadmapStep>[
+    RoadmapStep(
+      stage: RoadmapStage.weeks1to2,
+      title: 'Rebalance with hair volume, not surgery',
+      detail:
+          'The upper third is bounded by the hairline, not by bone, which makes '
+          'it the one third you can move this month. Volume at the crown '
+          'lengthens it; a flatter, closer cut shortens it. Photograph the same '
+          'cut for two weeks before judging it.',
+      evidence: EvidenceStrength.moderate,
+    ),
+    RoadmapStep(
+      stage: RoadmapStage.weeks3to4,
+      title: 'Set the hairline and jaw framing deliberately',
+      detail:
+          'Tidy the existing brow line rather than reshaping it, and keep a beard '
+          'short at the chin with a clean neckline: that sharpens the lower '
+          'third edge without adding width at the jaw corners. Both are '
+          'reversible, which is the point.',
+      evidence: EvidenceStrength.moderate,
+    ),
+  ];
 }

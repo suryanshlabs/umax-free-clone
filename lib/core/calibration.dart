@@ -21,6 +21,9 @@ class AnalysisCalibration {
     this.frontalYawThreshold = 0.82,
     this.maxRollDegrees = 8.0,
     this.noticeableAsymmetryPercent = 6.0,
+    this.potentialMinGain = 8.0,
+    this.potentialMaxGain = 15.0,
+    this.potentialPrimaryWeight = 0.7,
     this.landmarkCount = FaceLandmarks.requiredCount,
   }) : assert(symmetryTolerancePercent >= 0),
        assert(symmetryPenaltyPerPercent > 0),
@@ -29,7 +32,10 @@ class AnalysisCalibration {
        assert(symmetryWeight >= 0),
        assert(jawlineWeight >= 0),
        assert(thirdsWeight >= 0),
-       assert(frontalYawThreshold > 0 && frontalYawThreshold <= 1);
+       assert(frontalYawThreshold > 0 && frontalYawThreshold <= 1),
+       assert(potentialMinGain >= 0),
+       assert(potentialMaxGain >= potentialMinGain),
+       assert(potentialPrimaryWeight >= 0 && potentialPrimaryWeight <= 1);
 
   /// Asymmetry below this percentage is treated as landmark noise and is not
   /// penalised. MediaPipe's own landmark jitter is roughly ±0.3% on a still.
@@ -73,6 +79,21 @@ class AnalysisCalibration {
   /// Asymmetry at or above this percentage adds a "get this looked at if it is
   /// new" note. It is deliberately generous: a few percent is extremely common.
   final double noticeableAsymmetryPercent;
+
+  /// Smallest projection bonus added to the geometric baseline, in score
+  /// points. Even a perfectly even face gains a little: the projection model
+  /// assumes a good photograph on a good day, which no single capture is.
+  final double potentialMinGain;
+
+  /// Largest projection bonus. That much is only awarded when the two weakest
+  /// measurements are genuinely far from their reference bands, which is where
+  /// the most headroom exists.
+  final double potentialMaxGain;
+
+  /// How much the lowest score counts against the second-lowest when the bonus
+  /// is sized. 0.7 means "mostly the weakest link, with a nod to the runner-up",
+  /// which stops one noisy measurement from owning the whole projection.
+  final double potentialPrimaryWeight;
 
   /// Landmarks required before analysis is attempted.
   final int landmarkCount;

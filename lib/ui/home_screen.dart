@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/scan_history.dart';
-import 'camera_screen.dart';
+import 'analyze_source_sheet.dart';
 import 'compare_screen.dart';
 import 'theme.dart';
 import 'wiki_screen.dart';
@@ -31,6 +31,16 @@ class _HomeScreenState extends State<HomeScreen> {
     ).push(MaterialPageRoute<void>(builder: (BuildContext context) => screen));
   }
 
+  /// Every entry point into Face Analyze goes through the same sheet, so the
+  /// camera is a deliberate choice rather than the only way in.
+  Future<void> _startAnalyze() async {
+    final AnalyzeSource? source = await showAnalyzeSourceSheet(context);
+    if (!mounted || source == null) {
+      return;
+    }
+    await startFaceAnalyze(context, source);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ScanHistory history = context.watch<ScanHistory>();
@@ -47,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 24),
             _HeroCard(
               latest: latest,
-              onStart: () => _push(const CameraScreen()),
+              onStart: () => unawaited(_startAnalyze()),
             ),
             const SizedBox(height: 26),
             const _SectionLabel('MODULES'),
@@ -59,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
               accent: AppColors.accent,
               highlight: true,
               trailing: 'START',
-              onTap: () => _push(const CameraScreen()),
+              onTap: () => unawaited(_startAnalyze()),
             ),
             const SizedBox(height: 12),
             _ModuleTile(

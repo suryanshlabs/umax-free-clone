@@ -44,6 +44,10 @@ class ResultsScreen extends StatelessWidget {
                   _Header(report: report),
                   const SizedBox(height: 20),
                   _ScoreCard(report: report),
+                  const SizedBox(height: 16),
+                  _PotentialCard(report: report),
+                  const SizedBox(height: 16),
+                  _WeaknessRoadmap(report: report),
                   if (report.qualityWarnings.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 16),
                     _WarningCard(warnings: report.qualityWarnings),
@@ -381,6 +385,443 @@ class _DisclaimerCard extends StatelessWidget {
               fontSize: 11.5,
               height: 1.6,
               color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Measured baseline against the projection, side by side.
+///
+/// The strict number is the headline everywhere else; this card is the only
+/// place the projection appears, so it never masks what the geometry actually
+/// measured.
+class _PotentialCard extends StatelessWidget {
+  const _PotentialCard({required this.report});
+
+  final AnalysisReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Text(
+                'PROJECTION',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.8,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.mint.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  report.potentialGainText,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                    color: AppColors.mint,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              _ScoreColumn(
+                label: 'OVERALL',
+                value: report.overallText,
+                caption: 'measured',
+                color: scoreColor(report.overallScore),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(left: 16, right: 16, bottom: 14),
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 15,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              _ScoreColumn(
+                label: 'POTENTIAL',
+                value: report.potentialText,
+                caption: 'projected',
+                color: scoreColor(report.potentialScore),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _PotentialBar(
+            overall: report.overallScore,
+            potential: report.potentialScore,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Overall is strict: it is what the landmarks say, with no allowance '
+            'for a bad photo or a bad day. Potential adds '
+            '${report.potentialGainText} points by assuming your two weakest '
+            'measurements move into the band your strongest already sits in. It '
+            'is a ceiling for the habits in the roadmap below, not a promise: '
+            'bone structure does not change, but body composition, fluid, '
+            'grooming, posture and the photo do.',
+            style: const TextStyle(
+              fontSize: 11.5,
+              height: 1.6,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScoreColumn extends StatelessWidget {
+  const _ScoreColumn({
+    required this.label,
+    required this.value,
+    required this.caption,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final String caption;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.4,
+            color: AppColors.textTertiary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 34,
+                height: 1,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -1.4,
+                color: color,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 3, left: 2),
+              child: Text(
+                '/100',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        Text(
+          caption,
+          style: const TextStyle(fontSize: 10, color: AppColors.textTertiary),
+        ),
+      ],
+    );
+  }
+}
+
+/// A 100-point track split into measured, projected and remaining headroom.
+class _PotentialBar extends StatelessWidget {
+  const _PotentialBar({required this.overall, required this.potential});
+
+  final double overall;
+  final double potential;
+
+  @override
+  Widget build(BuildContext context) {
+    final int base = overall.clamp(0, 100).round();
+    final int gain = (potential - overall).clamp(0, 100 - base).round();
+    final int rest = (100 - base - gain).clamp(0, 100);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(99),
+      child: SizedBox(
+        height: 8,
+        child: Row(
+          children: <Widget>[
+            if (base > 0)
+              Expanded(
+                flex: base,
+                child: ColoredBox(color: scoreColor(overall)),
+              ),
+            if (gain > 0)
+              Expanded(
+                flex: gain,
+                child: const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: <Color>[AppColors.mint, AppColors.accentSoft],
+                    ),
+                  ),
+                  child: SizedBox.shrink(),
+                ),
+              ),
+            if (rest > 0)
+              Expanded(
+                flex: rest,
+                child: const ColoredBox(color: AppColors.surfaceHigh),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The lowest measurement, promoted out of the list, with its dated plan.
+///
+/// Deliberately the darkest surface in the app: this is the section the user is
+/// meant to act on, and it should not look like another informative card.
+class _WeaknessRoadmap extends StatelessWidget {
+  const _WeaknessRoadmap({required this.report});
+
+  final AnalysisReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final WeaknessInsight insight = report.coreWeakness;
+    final List<RoadmapStage> usedStages = <RoadmapStage>[
+      for (final RoadmapStage stage in RoadmapStage.values)
+        if (insight.stepsFor(stage).isNotEmpty) stage,
+    ];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF0A0B12), Color(0xFF141726)],
+        ),
+        border: Border.all(color: AppColors.amber.withValues(alpha: 0.32)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Text(
+                  'CORE WEAKNESS AREA',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                    color: AppColors.amber,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${insight.scoreText}/100',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.amber,
+                  fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            insight.title,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.4,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            insight.isClearlyWeakest
+                ? 'Your lowest measurement by '
+                      '${insight.gapToNextBest.toStringAsFixed(0)} points.'
+                : 'Effectively tied with your next measurement.',
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: AppColors.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            insight.why,
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.6,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'CORRECTIVE ROADMAP',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.8,
+              color: AppColors.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (
+            int stageIndex = 0;
+            stageIndex < usedStages.length;
+            stageIndex += 1
+          ) ...<Widget>[
+            Padding(
+              padding: EdgeInsets.only(top: stageIndex == 0 ? 0 : 14),
+              child: Text(
+                usedStages[stageIndex].label.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                  color: AppColors.amber,
+                ),
+              ),
+            ),
+            for (final RoadmapStep step in insight.stepsFor(
+              usedStages[stageIndex],
+            ))
+              _RoadmapStepTile(
+                index: insight.steps.indexOf(step) + 1,
+                step: step,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RoadmapStepTile extends StatelessWidget {
+  const _RoadmapStepTile({required this.index, required this.step});
+
+  final int index;
+  final RoadmapStep step;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color evidence = evidenceColor(step.evidence);
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.surfaceHigh,
+              border: Border.all(color: AppColors.outline),
+            ),
+            child: Text(
+              '$index',
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textTertiary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  step.title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  step.detail,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    height: 1.55,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: evidence,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      step.evidence.label,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.4,
+                        color: evidence,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],

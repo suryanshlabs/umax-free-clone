@@ -137,7 +137,9 @@ void main() {
   testWidgets('results dashboard renders scores and advice', (
     WidgetTester tester,
   ) async {
-    tester.view.physicalSize = const Size(1200, 2600);
+    // Tall enough that the lazily built sliver renders every card, including
+    // the projection and roadmap sections below the score.
+    tester.view.physicalSize = const Size(1200, 6200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -160,10 +162,14 @@ void main() {
 
     expect(find.text('Analysis complete'), findsOneWidget);
     expect(find.text('Balanced'), findsOneWidget);
-    expect(find.text('Eye symmetry'), findsOneWidget);
-    expect(find.text('Jawline angularity'), findsOneWidget);
-    expect(find.text('Facial thirds'), findsOneWidget);
+    // Each title appears on its measurement card and, for the weakest one, on
+    // the core-weakness card as well.
+    expect(find.text('Eye symmetry'), findsWidgets);
+    expect(find.text('Jawline angularity'), findsWidgets);
+    expect(find.text('Facial thirds'), findsWidgets);
     expect(find.textContaining('468 landmarks'), findsOneWidget);
+    expect(find.text('POTENTIAL'), findsOneWidget);
+    expect(find.text('CORE WEAKNESS AREA'), findsOneWidget);
 
     controller.dispose();
   });

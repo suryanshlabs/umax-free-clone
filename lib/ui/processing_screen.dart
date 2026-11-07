@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../ml/photo_prep.dart';
 import '../state/analysis_controller.dart';
 import 'results_screen.dart';
 import 'theme.dart';
@@ -32,6 +33,9 @@ class _ProcessingScreenState extends State<ProcessingScreen>
   int _step = 0;
   Timer? _stepTimer;
 
+  /// The prepared square, once it exists. Empty until [PhotoPreparer] has run.
+  String _displayPath = '';
+
   @override
   void initState() {
     super.initState();
@@ -49,7 +53,19 @@ class _ProcessingScreenState extends State<ProcessingScreen>
 
   Future<void> _run() async {
     final AnalysisController controller = context.read<AnalysisController>();
-    await controller.analyse(widget.imagePath);
+
+    // Every input — camera or gallery — is rotated upright and cropped to a
+    // fixed 1080x1080 square before detection, so two scans of the same face
+    // are measured by the same ruler.
+    final String path = await _prepare(widget.imagePath);
+    if (!mounted) {
+      return;
+    }
+    if (path != widget.imagePath) {
+      setState(() => _displayPath = path);
+    }
+
+    await controller.analyse(path);
     if (!mounted) {
       return;
     }
@@ -60,6 +76,21 @@ class _ProcessingScreenState extends State<ProcessingScreen>
           builder: (BuildContext context) => const ResultsScreen(),
         ),
       );
+    }
+  }
+
+  /// Returns the prepared square, or the original file if preparation fails.
+  ///
+  /// Falling back rather than failing is deliberate: the reader already reports
+  /// unreadable images with its own readable message, and a second error path
+  /// here would only add a way for the screen to break.
+  Future<String> _prepare(String path) async {
+    try {
+      final PreparedPhoto photo = await const PhotoPreparer().preparePath(path);
+      return photo.path;
+    } on Exception catch (error) {
+      debugPrint('Photo preparation failed, using the original: $error');
+      return path;
     }
   }
 
@@ -109,7 +140,11 @@ class _ProcessingScreenState extends State<ProcessingScreen>
                   child: Stack(
                     fit: StackFit.expand,
                     children: <Widget>[
-                      _PhotoBackdrop(path: widget.imagePath),
+                      _PhotoBackdrop(
+                        path: _displayPath.isEmpty
+                            ? widget.imagePath
+                            : _displayPath,
+                      ),
                       AnimatedBuilder(
                         animation: _scan,
                         builder: (BuildContext context, Widget? child) {

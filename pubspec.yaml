@@ -27,6 +27,10 @@ dependencies:
   # storage permission is involved on any supported Android version.
   path_provider: ^2.1.4
 
+  # Gallery pick for the second input path. Uses Android's system picker, which
+  # hands back a single user-chosen file and needs no storage permission.
+  image_picker: ^1.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

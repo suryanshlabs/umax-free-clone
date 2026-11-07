@@ -109,9 +109,12 @@ class AnalysisController extends ChangeNotifier {
 
       final AnalysisReport enriched = AnalysisReport(
         overallScore: report.overallScore,
+        potentialScore: report.potentialScore,
+        potentialGain: report.potentialGain,
         grade: report.grade,
         gradeBlurb: report.gradeBlurb,
         metrics: report.metrics,
+        coreWeakness: report.coreWeakness,
         raw: report.raw,
         qualityWarnings: warnings,
         safetyNote: report.safetyNote,

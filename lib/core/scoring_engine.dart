@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'calibration.dart';
 import 'feedback_engine.dart';
 import 'metrics.dart';
@@ -18,8 +20,20 @@ import 'report.dart';
 /// * **Facial thirds** — `100 - penalty * max(0, deviation - freeBand)`, where
 ///   deviation is the total absolute distance from a 1 : 1 : 1 split.
 ///
-/// The overall score is the weighted mean. Weights, bands and penalties all live
-/// in [AnalysisCalibration]; nothing is hard-coded here.
+/// Two numbers come out of those three scores:
+///
+/// * **Overall** is the weighted mean. It is deliberately strict: it is what the
+///   landmark coordinates say, with no allowance for a bad photo or a bad day.
+/// * **Potential** is the projection. It takes the two weakest measurements,
+///   measures the headroom those have between them, and adds a bonus of
+///   [AnalysisCalibration.potentialMinGain] to
+///   [AnalysisCalibration.potentialMaxGain] points accordingly. The weakest
+///   measurement is weighted by [AnalysisCalibration.potentialPrimaryWeight] so
+///   one noisy score cannot own the whole projection. Capped at 100, because
+///   that is where the scale ends.
+///
+/// Weights, bands, penalties and the projection range all live in
+/// [AnalysisCalibration]; nothing is hard-coded here.
 class ScoringEngine {
   const ScoringEngine({
     this.calibration = const AnalysisCalibration(),
@@ -87,19 +101,52 @@ class ScoringEngine {
       ),
     ];
 
+    final double gain = _projectionGain(<double>[
+      symmetryScore,
+      jawScore,
+      thirdsScore,
+    ]);
+    final double potential = math.min(100.0, overall + gain);
+
     final (String grade, String blurb) = _grade(overall);
 
     return AnalysisReport(
       overallScore: overall,
+      potentialScore: potential,
+      potentialGain: potential - overall,
       grade: grade,
       gradeBlurb: blurb,
       metrics: results,
+      coreWeakness: feedback.coreWeakness(results),
       raw: metrics,
       qualityWarnings: _qualityWarnings(metrics),
       safetyNote: _safetyNote(metrics),
       createdAt: createdAt ?? DateTime.now(),
       imagePath: imagePath,
     );
+  }
+
+  /// The projection bonus, in score points.
+  ///
+  /// The two lowest scores are blended (weakest first), inverted into a
+  /// severity, and mapped onto the calibrated bonus range. A face whose weakest
+  /// measurement is near 0 gets the full bonus; one whose measurement is already
+  /// strong gets the minimum, because there is very little left to project.
+  double _projectionGain(List<double> scores) {
+    if (scores.isEmpty) {
+      return 0;
+    }
+    final List<double> ordered = List<double>.of(scores)
+      ..sort((double a, double b) => a.compareTo(b));
+    final double weakest = ordered.first;
+    final double blended = ordered.length == 1
+        ? weakest
+        : weakest * calibration.potentialPrimaryWeight +
+              ordered[1] * (1 - calibration.potentialPrimaryWeight);
+    final double severity = ((100 - blended) / 100).clamp(0.0, 1.0);
+    return calibration.potentialMinGain +
+        (calibration.potentialMaxGain - calibration.potentialMinGain) *
+            severity;
   }
 
   /// Mirrored faces lose nothing; every percentage point of difference past the

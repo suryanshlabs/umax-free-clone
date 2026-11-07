@@ -258,3 +258,19 @@ Pull requests are welcome. `flutter test` and `flutter analyze` are expected to 
 clean before a PR — the bundled CI workflow runs both on every push, and the
 detector is isolated behind an interface so new features can be tested without a
 phone.
+
+## Download and install
+
+A ready-to-install APK is attached to the [latest release](../../releases/latest):
+
+* **app-release.apk** — universal build covering arm64-v8a, armeabi-v7a and x86_64
+  (so it also runs in an emulator), roughly 80 MB, Android 5.0 and newer.
+* The ML Kit model is bundled, so it works offline from the very first launch.
+* It is signed with the debug key, which is fine for sideloading but not for
+  Play Store distribution. Replace `signingConfig` in
+  `android/app/build.gradle.kts` with your own keystore before publishing.
+
+To install: download the APK on the phone, tap it, allow "install unknown apps"
+for your browser or file manager when prompted, then install. Because it is not
+signed for the Play Store, Android will show a warning — that is expected for
+any sideloaded build.

@@ -1,0 +1,32 @@
+name: facial_analysis
+description: >-
+  Offline facial geometry analysis. Google MediaPipe Face Mesh (468 landmarks)
+  runs on the device through ML Kit; every measurement and score is computed
+  locally in Dart. No network calls, no accounts, no uploads.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Camera preview + still capture.
+  camera: ^0.11.0
+
+  # Google's on-device face mesh detector (ML Kit Face Mesh Detection, the
+  # production packaging of MediaPipe Face Mesh). Returns 468 3D landmarks.
+  google_mlkit_face_mesh_detection: ^0.7.1
+
+  # Local state management for the analysis pipeline.
+  provider: ^6.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

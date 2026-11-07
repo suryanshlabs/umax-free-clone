@@ -1,0 +1,230 @@
+import 'metrics.dart';
+import 'report.dart';
+
+/// Generates the advice text for each metric.
+///
+/// The rules are band-based rather than templated from thin air: each metric is
+/// split into four bands, and each band has curated advice whose evidence
+/// strength is labelled. Text is written to be specific ("switch chewing sides",
+/// "shoot level with the eyes") instead of vague ("improve your symmetry"), and
+/// nothing here claims to change bone structure, because nothing here can.
+class FeedbackEngine {
+  const FeedbackEngine();
+
+  List<AdviceItem> forEyeSymmetry(RawFaceMetrics metrics, double score) {
+    final String worseSide = metrics.eyeDistanceRatio >= 1 ? 'left' : 'right';
+    if (score >= 85) {
+      return <AdviceItem>[
+        const AdviceItem(
+          title: 'Keep the conditions consistent',
+          detail:
+              'This reading is inside the mirrored band, so the useful next '
+              'step is comparability: same room, same light, same distance, '
+              'same time of day. Re-scan weekly and watch the trend, not the '
+              'single number.',
+          evidence: EvidenceStrength.measurement,
+        ),
+        const AdviceItem(
+          title: 'Do not chase zero',
+          detail:
+              'Almost every face is a few percent asymmetric, and a perfect '
+              '40/40 split is not the goal. Differences under about 3% are '
+              'within the range that landmark detection itself can produce on '
+              'two photos of the same unchanged face.',
+          evidence: EvidenceStrength.moderate,
+        ),
+      ];
+    }
+
+    final List<AdviceItem> advice = <AdviceItem>[
+      AdviceItem(
+        title: 'Rule out the camera before the mirror',
+        detail:
+            'At this level the photo is usually the bigger variable. Holding '
+            'the phone off-centre, tilting the head two degrees, or lighting '
+            'one cheek more than the other moves this reading by more than any '
+            'habit will. Your left-to-right eye-distance ratio came out at '
+            '${metrics.eyeDistanceRatio.toStringAsFixed(2)} : 1 with the '
+            '${worseSide}side reading longer. Retake at eye level, 50–70 cm '
+            'away, with even light.',
+        evidence: EvidenceStrength.measurement,
+      ),
+      const AdviceItem(
+        title: 'Alternate sleep sides, or sleep on your back',
+        detail:
+            'Sustained pressure from one pillow side is the most commonly cited '
+            'environmental contributor to soft-tissue facial asymmetry. The '
+            'evidence is observational rather than experimental, so treat this '
+            'as a free habit change rather than a guaranteed fix — but it costs '
+            'nothing to rotate sides.',
+        evidence: EvidenceStrength.moderate,
+      ),
+      const AdviceItem(
+        title: 'Chew on both sides',
+        detail:
+            'Habitual one-sided chewing loads one masseter and one '
+            'temporomandibular joint harder, and dental research links it to '
+            'measurable asymmetry in the lower face. Deliberately starting '
+            'meals on the non-dominant side is the whole intervention.',
+        evidence: EvidenceStrength.moderate,
+      ),
+      const AdviceItem(
+        title: 'Stop resting your chin in one hand',
+        detail:
+            'Repeated leaning puts steady pressure on one cheekbone and jaw '
+            'edge for hours at a time. The effect per session is tiny; the '
+            'cumulative effect of a decade of desk posture is the reason it '
+            'shows up in photos.',
+        evidence: EvidenceStrength.emerging,
+      ),
+    ];
+    return advice;
+  }
+
+  List<AdviceItem> forJawline(RawFaceMetrics metrics, double score) {
+    if (score >= 85) {
+      return <AdviceItem>[
+        const AdviceItem(
+          title: 'This is a defined, tapered jaw',
+          detail:
+              'The jaw edges converge sharply towards the chin, which is the '
+              'geometry people read as "angular". Nothing needs fixing. If you '
+              'want a stronger front profile, the only lever left is leaning '
+              'out further, and that is a body-composition decision, not a '
+              'facial one.',
+          evidence: EvidenceStrength.strong,
+        ),
+        const AdviceItem(
+          title: 'Protect it from puffiness',
+          detail:
+              'The jaw–neck border is the first thing a salty meal, alcohol or '
+              'a short night blurs. If you are photographing something, keep '
+              'the evening before low-sodium and get the sleep.',
+          evidence: EvidenceStrength.moderate,
+        ),
+      ];
+    }
+
+    final bool isObtuse = metrics.jawAngleDegrees > 105;
+    final List<AdviceItem> advice = <AdviceItem>[
+      AdviceItem(
+        title: isObtuse
+            ? 'Body composition is the main lever'
+            : 'Define the border before chasing the angle',
+        detail:
+            'What reads as a jawline is mostly the fat layer sitting over the '
+            'mandible, and that layer is not spot-reducible. A modest calorie '
+            'deficit, adequate protein and resistance training lowers fat '
+            'everywhere, and the face usually shows it early because the fat '
+            'layer there is thin. Your chin-to-jaw-edge angle measured '
+            '${metrics.jawAngleDegrees.toStringAsFixed(0)}°.',
+        evidence: EvidenceStrength.strong,
+      ),
+      const AdviceItem(
+        title: 'Drop the fluid, temporarily',
+        detail:
+            'High sodium, alcohol and short sleep all increase facial fluid '
+            'retention, which blurs the jaw–neck border for a day or two. '
+            'Water, sleep and an easy evening make a visible difference to a '
+            'photo. It is cosmetic and it reverses; do not read it as progress.',
+        evidence: EvidenceStrength.moderate,
+      ),
+      const AdviceItem(
+        title: 'Fix posture and camera angle',
+        detail:
+            'Forward head posture flattens the angle between jaw and neck. '
+            'Stand tall, push the chin slightly forward and down, and hold the '
+            'phone at eye level or a touch above. This is the single largest '
+            'difference between a soft and a defined jaw in a photo, and it '
+            'costs nothing.',
+        evidence: EvidenceStrength.strong,
+      ),
+      const AdviceItem(
+        title: 'Tongue posture is a habit, not a treatment',
+        detail:
+            'Resting the whole tongue against the palate with lips sealed '
+            '("mewing") is reasonable posture and helps if you mouth-breathe. '
+            'Claims that it remodels an adult mandible are not supported by '
+            'good clinical evidence. Do it because it is better resting '
+            'posture, not because it will move bone.',
+        evidence: EvidenceStrength.emerging,
+      ),
+      const AdviceItem(
+        title: 'Hard chewing cuts both ways',
+        detail:
+            'Chewing gum or tough food can grow the masseter, which widens the '
+            'lower face. From the front that can look powerful, but it also '
+            'spreads the two jaw-edge points this score is built from, so the '
+            'number moves down. Decide which look you want before you train it.',
+        evidence: EvidenceStrength.moderate,
+      ),
+    ];
+    return advice;
+  }
+
+  List<AdviceItem> forFacialThirds(RawFaceMetrics metrics, double score) {
+    final String dominant = metrics.dominantThird;
+    final List<AdviceItem> advice = <AdviceItem>[
+      AdviceItem(
+        title: 'Level the camera first',
+        detail:
+            'A few degrees of chin lift or tilt moves the apparent thirds more '
+            'than anything structural about your face. Your split reads '
+            '${(metrics.upperThirdFraction * 100).round()} / '
+            '${(metrics.middleThirdFraction * 100).round()} / '
+            '${(metrics.lowerThirdFraction * 100).round()} percent '
+            '(forehead / midface / lower), with the $dominant the largest. '
+            'Keep the phone vertical and level with your eyes, and shoot the '
+            'same way each time.',
+        evidence: EvidenceStrength.measurement,
+      ),
+      const AdviceItem(
+        title: 'Hair is the upper third\u2019s dial',
+        detail:
+            'The top third is bounded by the hairline, not by bone, which makes '
+            'it the easiest third to change. More volume at the crown lengthens '
+            'it; a flatter, closer cut shortens it. If your lower third '
+            'dominates, volume up top is the cheapest rebalance available.',
+        evidence: EvidenceStrength.moderate,
+      ),
+      const AdviceItem(
+        title: 'Brows set the upper boundary',
+        detail:
+            'Brow height and shape are how most people read where the forehead '
+            'ends and the midface begins. Grooming to tidy the existing line is '
+            'low risk; aggressively reshaping or over-plucking moves the '
+            'boundary and rarely looks better than what you started with.',
+        evidence: EvidenceStrength.emerging,
+      ),
+      const AdviceItem(
+        title: 'Facial hair and jaw framing',
+        detail:
+            'A short beard adds visual length to the lower third, while a clean '
+            'neckline sharpens its edge without changing the proportion. If '
+            'your lower third already dominates, keep the beard short at the '
+            'chin rather than building volume on the jaw corners.',
+        evidence: EvidenceStrength.moderate,
+      ),
+      const AdviceItem(
+        title: 'Structural change is a clinical decision',
+        detail:
+            'Orthodontics, orthognathic surgery and dermal filler can change '
+            'these proportions, and each carries real cost and real risk. That '
+            'conversation belongs with a qualified professional who can examine '
+            'you in person. No app measurement should decide it.',
+        evidence: EvidenceStrength.moderate,
+      ),
+      const AdviceItem(
+        title: 'Why this score is strict',
+        detail:
+            'In the canonical MediaPipe mesh, landmark 2 sits at the top of the '
+            'nose bridge (the radix), not at the base of the nose, so the '
+            'middle third here runs glabella-to-radix and reads shorter than a '
+            'textbook brow-to-subnasale third. The ideal is a reference, not a '
+            'pass mark — compare your own scans to each other, not to 100.',
+        evidence: EvidenceStrength.measurement,
+      ),
+    ];
+    return advice;
+  }
+}

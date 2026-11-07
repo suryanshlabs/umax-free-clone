@@ -15,7 +15,12 @@ import 'widgets/face_guide_painter.dart';
 /// calculation. Live preview analysis would trade accuracy for motion feedback
 /// this app does not need.
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  const CameraScreen({super.key, this.returnPathOnly = false});
+
+  /// When true the screen pops with the captured file path instead of opening
+  /// the single-scan result flow, so the comparison screens can run their own
+  /// two-photo sequence with the same guided camera.
+  final bool returnPathOnly;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -162,6 +167,12 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     final String path = capturedPath;
+
+    if (widget.returnPathOnly) {
+      // The caller takes it from here; dispose() releases the camera.
+      Navigator.of(context).pop(path);
+      return;
+    }
 
     // Release the camera while ML Kit works: two heavy camera-adjacent
     // pipelines at once is how mid-range phones start dropping frames.

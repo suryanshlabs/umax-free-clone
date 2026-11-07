@@ -4,7 +4,7 @@ description: >-
   runs on the device through ML Kit; every measurement and score is computed
   locally in Dart. No network calls, no accounts, no uploads.
 publish_to: "none"
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.9.0
@@ -30,6 +30,7 @@ dependencies:
   # Gallery pick for the second input path. Uses Android's system picker, which
   # hands back a single user-chosen file and needs no storage permission.
   image_picker: ^1.1.2
+  file_picker: ^13.3.2
 
 dev_dependencies:
   flutter_test:

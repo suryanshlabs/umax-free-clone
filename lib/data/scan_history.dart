@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../core/metrics.dart';
 import '../core/report.dart';
 
 /// One scored measurement, flattened for storage.
@@ -17,12 +18,25 @@ class SavedMetric {
     required this.title,
     required this.rawValue,
     required this.score,
+    this.rawNumber,
   });
 
   final MetricId id;
   final String title;
   final String rawValue;
   final double score;
+
+  /// The measurement in its own units — percent asymmetry, degrees of chin
+  /// angle, or the thirds deviation index. Absent on scans saved before this was
+  /// recorded, which is why every reader treats it as optional.
+  final double? rawNumber;
+
+  /// `%`, `°`, or empty for the unitless thirds index.
+  String get unit => switch (id) {
+    MetricId.eyeSymmetry => '%',
+    MetricId.jawline => '°',
+    MetricId.facialThirds => '',
+  };
 
   /// The same qualitative bands the live dashboard uses.
   String get scoreLabel {
@@ -33,12 +47,13 @@ class SavedMetric {
     return 'Focus area';
   }
 
-  factory SavedMetric.fromMetric(MetricResult metric) {
+  factory SavedMetric.fromMetric(MetricResult metric, {double? rawNumber}) {
     return SavedMetric(
       id: metric.id,
       title: metric.title,
       rawValue: metric.rawValue,
       score: metric.score,
+      rawNumber: rawNumber,
     );
   }
 
@@ -47,6 +62,7 @@ class SavedMetric {
     'title': title,
     'raw': rawValue,
     'score': score,
+    'number': rawNumber,
   };
 
   /// Returns null for anything unreadable, so one corrupt entry cannot take the
@@ -69,11 +85,13 @@ class SavedMetric {
     }
     final Object? title = json['title'];
     final Object? rawValue = json['raw'];
+    final Object? rawNumber = json['number'];
     return SavedMetric(
       id: metricId,
       title: title is String && title.isNotEmpty ? title : metricId.name,
       rawValue: rawValue is String ? rawValue : '—',
       score: rawScore.toDouble(),
+      rawNumber: rawNumber is num ? rawNumber.toDouble() : null,
     );
   }
 }
@@ -88,6 +106,9 @@ class SavedScan {
     required this.metrics,
     this.warnings = const <String>[],
     this.imagePath,
+    this.potentialScore,
+    this.title,
+    this.isFriend = false,
   });
 
   final String id;
@@ -98,18 +119,74 @@ class SavedScan {
   final List<String> warnings;
   final String? imagePath;
 
+  /// The projection shown beside the baseline. Absent on scans saved before the
+  /// projection existed.
+  final double? potentialScore;
+
+  /// A name the owner gave this report when sharing it. Null for a scan taken on
+  /// this device without one.
+  final String? title;
+
+  /// True when the report arrived as a `.umax` file from someone else. Imported
+  /// reports never masquerade as measurements of this device's owner.
+  final bool isFriend;
+
   factory SavedScan.fromReport(AnalysisReport report) {
+    final RawFaceMetrics raw = report.raw;
     return SavedScan(
       id: report.createdAt.microsecondsSinceEpoch.toString(),
       createdAt: report.createdAt,
       overallScore: report.overallScore,
       grade: report.grade,
+      potentialScore: report.potentialScore,
       metrics: <SavedMetric>[
         for (final MetricResult metric in report.metrics)
-          SavedMetric.fromMetric(metric),
+          SavedMetric.fromMetric(
+            metric,
+            rawNumber: switch (metric.id) {
+              MetricId.eyeSymmetry => raw.eyeAsymmetryPercent,
+              MetricId.jawline => raw.jawAngleDegrees,
+              MetricId.facialThirds => raw.thirdsDeviation,
+            },
+          ),
       ],
       warnings: report.qualityWarnings,
       imagePath: report.imagePath,
+    );
+  }
+
+  /// What the UI calls this scan: the shared title, the owner, or a friend.
+  String get displayTitle {
+    final String? named = title;
+    if (named != null && named.isNotEmpty) {
+      return named;
+    }
+    return isFriend ? 'Shared report' : 'Your scan';
+  }
+
+  SavedScan copyWith({
+    String? id,
+    DateTime? createdAt,
+    double? overallScore,
+    String? grade,
+    List<SavedMetric>? metrics,
+    List<String>? warnings,
+    String? imagePath,
+    double? potentialScore,
+    String? title,
+    bool? isFriend,
+  }) {
+    return SavedScan(
+      id: id ?? this.id,
+      createdAt: createdAt ?? this.createdAt,
+      overallScore: overallScore ?? this.overallScore,
+      grade: grade ?? this.grade,
+      metrics: metrics ?? this.metrics,
+      warnings: warnings ?? this.warnings,
+      imagePath: imagePath ?? this.imagePath,
+      potentialScore: potentialScore ?? this.potentialScore,
+      title: title ?? this.title,
+      isFriend: isFriend ?? this.isFriend,
     );
   }
 
@@ -134,6 +211,9 @@ class SavedScan {
     'at': createdAt.toIso8601String(),
     'score': overallScore,
     'grade': grade,
+    'potential': potentialScore,
+    'title': title,
+    'friend': isFriend,
     'metrics': <Object?>[
       for (final SavedMetric metric in metrics) metric.toJson(),
     ],
@@ -170,6 +250,9 @@ class SavedScan {
     final Object? rawWarnings = json['warnings'];
     final Object? rawGrade = json['grade'];
     final Object? rawImage = json['image'];
+    final Object? rawPotential = json['potential'];
+    final Object? rawTitle = json['title'];
+    final Object? rawFriend = json['friend'];
     return SavedScan(
       id: json['id'] is String
           ? json['id']! as String
@@ -185,6 +268,11 @@ class SavedScan {
             ]
           : const <String>[],
       imagePath: rawImage is String ? rawImage : null,
+      potentialScore: rawPotential is num ? rawPotential.toDouble() : null,
+      title: rawTitle is String && rawTitle.trim().isNotEmpty
+          ? rawTitle.trim()
+          : null,
+      isFriend: rawFriend == true,
     );
   }
 

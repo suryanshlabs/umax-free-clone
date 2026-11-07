@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/report.dart';
+import '../core/umax_file.dart';
 import '../state/analysis_controller.dart';
 import 'camera_screen.dart';
 import 'theme.dart';
@@ -71,6 +74,8 @@ class ResultsScreen extends StatelessWidget {
                     MetricCard(metric: metric),
                   const SizedBox(height: 6),
                   const _DisclaimerCard(),
+                  const SizedBox(height: 16),
+                  _ShareFileCard(report: report),
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: () {
@@ -94,6 +99,188 @@ class ResultsScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Exports the report as a `.umax` file through Android's own save dialog, so
+/// the user picks the folder (Downloads, Documents, a memory card) and no
+/// storage permission is needed.
+class _ShareFileCard extends StatelessWidget {
+  const _ShareFileCard({required this.report});
+
+  final AnalysisReport report;
+
+  Future<void> _export(BuildContext context) async {
+    final String? title = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) =>
+          _NameReportDialog(initial: report.grade),
+    );
+    if (title == null || !context.mounted) {
+      return;
+    }
+
+    final UmaxDocument document = UmaxDocument.fromReport(report, title: title);
+    final String fileName = UmaxDocument.suggestedFileName(title);
+
+    try {
+      final Uri? saved = await FilePicker.saveFile(
+        fileName: fileName,
+        bytes: Uint8List.fromList(utf8.encode(document.encode())),
+        mimeType: 'application/json',
+        dialogTitle: 'Save your .umax report',
+      );
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            saved == null
+                ? 'Save cancelled. Nothing was written.'
+                : 'Saved $fileName. Send it to a friend, then open Friend VS '
+                      'Mode to import it.',
+          ),
+        ),
+      );
+    } on PlatformException catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('The file could not be saved (${error.code}).')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Row(
+            children: <Widget>[
+              Icon(
+                Icons.ios_share_rounded,
+                size: 16,
+                color: AppColors.accentSoft,
+              ),
+              SizedBox(width: 10),
+              Text(
+                'SHARE DATA FILE',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.6,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Exports the scores and raw measurements as a small .umax file — a '
+            'name, the numbers and the timestamp. No photo, no location. A '
+            'friend imports it to compare faces without either phone talking '
+            'to a server.',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.55,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () => _export(context),
+            icon: const Icon(Icons.save_alt_rounded, size: 18),
+            label: const Text('Save .umax file'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+              foregroundColor: AppColors.textPrimary,
+              side: BorderSide(
+                color: AppColors.accentSoft.withValues(alpha: 0.5),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NameReportDialog extends StatefulWidget {
+  const _NameReportDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_NameReportDialog> createState() => _NameReportDialogState();
+}
+
+class _NameReportDialogState extends State<_NameReportDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: 'My ${widget.initial.toLowerCase()} scan',
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final String value = _controller.text.trim();
+    Navigator.of(context).pop(value.isEmpty ? 'My scan' : value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surfaceHigh,
+      title: const Text('Name this report'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            'The name travels with the file, so whoever imports it sees what '
+            'you called it.',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.5,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            maxLength: UmaxDocument.maxTitleLength,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (String _) => _submit(),
+            decoration: const InputDecoration(hintText: 'e.g. Alex, November'),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(onPressed: _submit, child: const Text('Choose location')),
+      ],
     );
   }
 }

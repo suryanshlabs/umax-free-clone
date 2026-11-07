@@ -405,7 +405,9 @@ class _SavedTile extends StatelessWidget {
             ),
           ),
           title: Text(
-            scan.grade,
+            scan.displayTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w600,
@@ -413,7 +415,11 @@ class _SavedTile extends StatelessWidget {
             ),
           ),
           subtitle: Text(
-            scan.shortDate,
+            scan.isFriend
+                ? 'Shared report · ${scan.grade} · ${scan.shortDate}'
+                : '${scan.grade} · ${scan.shortDate}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 10.5,
               color: AppColors.textTertiary,

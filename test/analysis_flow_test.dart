@@ -117,6 +117,52 @@ void main() {
       controller.dispose();
     });
 
+    test('surfaces non-Exception errors with their real message', () async {
+      // An Error (not an Exception) used to escape the controller and freeze
+      // the UI on "ANALYSING"; now it must land on the failed state with the
+      // actual error named.
+      final AnalysisController controller = AnalysisController(
+        reader: FakeFaceMeshSource(error: StateError('detector wedged')),
+      );
+
+      await controller.analyse(
+        '/tmp/photo.jpg',
+        minimumVisibleTime: Duration.zero,
+      );
+
+      expect(controller.phase, AnalysisPhase.failed);
+      expect(controller.isAnalysing, isFalse);
+      expect(controller.errorMessage, contains('StateError'));
+      expect(controller.errorMessage, contains('detector wedged'));
+      controller.dispose();
+    });
+
+    test('ignores a second analyse call while one is running', () async {
+      final FakeFaceMeshSource source = FakeFaceMeshSource(
+        reading: syntheticReading(),
+      );
+      final AnalysisController controller = AnalysisController(
+        reader: source,
+        timeout: const Duration(seconds: 5),
+      );
+
+      final Future<void> first = controller.analyse(
+        '/tmp/photo.jpg',
+        minimumVisibleTime: Duration.zero,
+      );
+      // This call must be a no-op: the first run owns the pipeline.
+      await controller.analyse(
+        '/tmp/photo.jpg',
+        minimumVisibleTime: Duration.zero,
+      );
+      await first;
+
+      expect(source.readCount, 1);
+      expect(controller.phase, AnalysisPhase.ready);
+      expect(controller.isAnalysing, isFalse);
+      controller.dispose();
+    });
+
     test('reset clears the result', () async {
       final AnalysisController controller = AnalysisController(
         reader: FakeFaceMeshSource(reading: syntheticReading()),

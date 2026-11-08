@@ -1,5 +1,5 @@
-/// Body texts for the Profile Encyclopedia: sodium, diet, skin and hair.
-/// Hardcoded and offline.
+// Body texts for the Profile Encyclopedia: sodium, diet, skin and hair.
+// Hardcoded and offline.
 
 String sodiumBody() => '''
 Sodium and water retention affect facial puffiness the next morning, which rounds

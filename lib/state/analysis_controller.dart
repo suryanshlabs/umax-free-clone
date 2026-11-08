@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/error_logger.dart';
 import '../core/facial_analysis_service.dart';
 import '../core/metrics.dart';
 import '../core/report.dart';
@@ -34,10 +35,13 @@ class AnalysisController extends ChangeNotifier {
 
   /// Hard ceiling on the whole detection step.
   ///
-  /// The reader enforces its own deadline around ML Kit; this one also covers
-  /// any other [FaceMeshSource] and the file read, so a wedged platform channel
-  /// can never leave the scanning animation spinning with no way out.
-  static const Duration pipelineTimeout = Duration(seconds: 8);
+  /// The reader enforces its own 30 s deadline around ML Kit; this one also
+  /// covers any other [FaceMeshSource] and the file read, so a wedged platform
+  /// channel can never leave the scanning animation spinning with no way out.
+  /// Forty-five seconds: the previous 8 s was shorter than a cold ML Kit
+  /// model's first run on a busy mid-range phone, and every timeout was then
+  /// reported as "Face not detected" — the false NO READING this fixes.
+  static const Duration pipelineTimeout = Duration(seconds: 45);
 
   final FaceMeshSource _reader;
   final FacialAnalysisService _service;
@@ -152,15 +156,33 @@ class AnalysisController extends ChangeNotifier {
       // store logs its own write failures.
       await _history?.add(enriched);
     } on TimeoutException {
+      ErrorLogger.instance.logWarning(
+        'Analysis pipeline exceeded ${_timeout.inSeconds}s.',
+        source: ErrorLogSource.analysis,
+        context: <String, Object?>{'stage': 'pipeline-timeout'},
+      );
       await _holdAnimation(stopwatch, minimumVisibleTime);
-      _fail(faceNotDetectedMessage);
+      _fail(detectionTimedOutMessage);
     } on FacialAnalysisException catch (error) {
+      // A missing face is a normal user-facing outcome, not an error to log;
+      // everything else (partial mesh, scoring faults) is worth a record.
+      if (error.message != faceNotDetectedMessage) {
+        ErrorLogger.instance.logWarning(
+          error.message,
+          source: ErrorLogSource.analysis,
+        );
+      }
       await _holdAnimation(stopwatch, minimumVisibleTime);
       _fail(error.message);
     } on Object catch (error, stackTrace) {
       // Catches Errors too (ArgumentError, StateError, ...), which `on
       // Exception` lets escape and freeze the UI mid-"ANALYSING". The real
       // error is shown to the user, not the generic face-not-detected text.
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.analysis,
+      );
       debugPrint('Analysis failed: $error');
       debugPrint('$stackTrace');
       await _holdAnimation(stopwatch, minimumVisibleTime);

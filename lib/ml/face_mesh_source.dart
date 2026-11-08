@@ -8,6 +8,17 @@ import '../core/vector.dart';
 const String faceNotDetectedMessage =
     'Face not detected. Keep your face centered in bright light and try again';
 
+/// Shown when the detector itself never answered in time.
+///
+/// Kept separate from [faceNotDetectedMessage] on purpose: a slow, cold
+/// detector is not a missing face, and telling the user to "keep your face in
+/// the light" when the real problem is a 30-second deadline misleads them.
+/// The analysis controller's deadline is 45 s and the reader's is 30 s, so
+/// this only appears for genuinely wedged plugin calls.
+const String detectionTimedOutMessage =
+    'Analysis timed out. The on-device face detector is still loading on its '
+    'first run; give it a few seconds, keep the phone cool, and try again.';
+
 /// One face mesh, already converted into the uniform coordinate space the maths
 /// expects: x and y share one scale, so distances and angles are meaningful.
 class FaceMeshReading {

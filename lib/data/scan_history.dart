@@ -1,12 +1,8 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
-
 import '../core/metrics.dart';
 import '../core/report.dart';
 import '../core/user_profile.dart';
+
+export 'scan_history_store.dart';
 
 /// One scored measurement, flattened for storage.
 class SavedMetric {

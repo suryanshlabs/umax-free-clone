@@ -50,27 +50,45 @@ class AnalysisController extends ChangeNotifier {
   String? _errorMessage;
   String? _imagePath;
   double? _imageAspectRatio;
+  bool _isAnalysing = false;
 
   AnalysisPhase get phase => _phase;
   AnalysisReport? get report => _report;
   String? get errorMessage => _errorMessage;
   String? get imagePath => _imagePath;
 
-  bool get isBusy => _phase == AnalysisPhase.analysing;
+  /// True while a pipeline run is in flight — the single flag that prevents a
+  /// second concurrent run, a tap on "again", or a retry racing a scan.
+  bool get isAnalysing => _isAnalysing;
+
+  bool get isBusy => _isAnalysing;
+
+  /// Marks a failure that happened *around* the pipeline (photo preparation,
+  /// navigation) so those screens land on the failed state with a real message
+  /// instead of spinning on "ANALYSING" forever.
+  void failWithMessage(String message) {
+    _fail(message);
+  }
 
   /// Runs the full pipeline for the photo at [path].
   ///
   /// The processing animation is given a minimum on-screen time so a fast
   /// device does not flash a spinner for 200 ms — the analysis itself is
   /// unchanged by the delay.
+  ///
+  /// Whatever happens inside — detector fault, a plugin throwing an `Error`
+  /// (which `on Exception` cannot catch), a timeout, a bug — the method always
+  /// ends in either [AnalysisPhase.ready] or [AnalysisPhase.failed] with a
+  /// message the UI can show, and always clears [isAnalysing].
   Future<void> analyse(
     String path, {
     double? imageAspectRatio,
     Duration minimumVisibleTime = const Duration(milliseconds: 1500),
   }) async {
-    if (_phase == AnalysisPhase.analysing) {
+    if (_isAnalysing) {
       return;
     }
+    _isAnalysing = true;
 
     _phase = AnalysisPhase.analysing;
     _errorMessage = null;
@@ -139,11 +157,32 @@ class AnalysisController extends ChangeNotifier {
     } on FacialAnalysisException catch (error) {
       await _holdAnimation(stopwatch, minimumVisibleTime);
       _fail(error.message);
-    } on Exception catch (error) {
-      await _holdAnimation(stopwatch, minimumVisibleTime);
-      _fail(faceNotDetectedMessage);
+    } on Object catch (error, stackTrace) {
+      // Catches Errors too (ArgumentError, StateError, ...), which `on
+      // Exception` lets escape and freeze the UI mid-"ANALYSING". The real
+      // error is shown to the user, not the generic face-not-detected text.
       debugPrint('Analysis failed: $error');
+      debugPrint('$stackTrace');
+      await _holdAnimation(stopwatch, minimumVisibleTime);
+      _fail(_describe(error));
+    } finally {
+      _isAnalysing = false;
+      // Last-resort guard: never leave the UI on "ANALYSING" without a result.
+      if (_phase == AnalysisPhase.analysing) {
+        _fail(faceNotDetectedMessage);
+      }
     }
+  }
+
+  /// The text the failure panel shows for an unexpected fault: the error's
+  /// runtime type and message, capped so a huge platform error cannot flood
+  /// the screen. The full stack is still in the logs.
+  String _describe(Object error) {
+    final String text = error.toString();
+    final String capped = text.length > 240
+        ? '${text.substring(0, 240)}…'
+        : text;
+    return 'Analysis failed (${error.runtimeType}): $capped';
   }
 
   /// Retries the last photo, if there is one.

@@ -338,8 +338,8 @@ class FeedbackEngine {
     ),
   ];
 
-  static List<RoadmapStep> _jawlineHabits = <RoadmapStep>[
-    RoadmapStep(
+  static final List<RoadmapStep> _jawlineHabits = <RoadmapStep>[
+    const RoadmapStep(
       stage: RoadmapStage.weeks1to2,
       title: 'Hold a small deficit with enough protein',
       detail:
@@ -350,7 +350,7 @@ class FeedbackEngine {
           'bodyweight a week - so the face does not read as gaunt instead.',
       evidence: EvidenceStrength.strong,
     ),
-    RoadmapStep(
+    const RoadmapStep(
       stage: RoadmapStage.weeks3to4,
       title: 'Sleep 7-9 hours and keep sodium steady',
       detail:

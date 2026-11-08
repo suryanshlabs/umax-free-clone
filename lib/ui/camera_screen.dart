@@ -362,19 +362,19 @@ class _CameraScreenState extends State<CameraScreen>
                     const SizedBox(width: 10),
                     _CircleButton(
                       icon: Icons.flip_camera_ios_rounded,
-                       tooltip: 'Switch camera',
+                      tooltip: 'Switch camera',
                       onPressed: ready && _cameras.length > 1
                           ? () => unawaited(_switchCamera())
                           : null,
                     ),
-                      const Spacer(),
+                    const Spacer(),
                     Column(
                       children: <Widget>[
                         const Text(
-                         'FACE gEOMETRY',
-                         style: TextStyle(
+                          'FACE GEOMETRY',
+                          style: TextStyle(
                             fontSize: 11.5,
-                           fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 2.4,
                             color: AppColors.textPrimary,
                           ),
@@ -432,12 +432,9 @@ class _CameraScreenState extends State<CameraScreen>
                         onPressed: ready && !_capturing && !_starting
                             ? () => unawaited(_capture())
                             : null,
-                       ),
-                      ],
-                     ],
-                     ],
-                   ),
+                      ),
                     ],
+                  ],
                 ),
               ),
             ),
@@ -585,6 +582,7 @@ class _ShutterButton extends StatelessWidget {
                         size: 24,
                       ),
               ),
+            ],
           ),
         ),
       ),

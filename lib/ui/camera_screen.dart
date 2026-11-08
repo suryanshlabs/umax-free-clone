@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
+import '../core/error_logger.dart';
 import 'processing_screen.dart';
 import 'theme.dart';
 import 'widgets/face_guide_painter.dart';
@@ -102,9 +103,19 @@ class _CameraScreenState extends State<CameraScreen>
       );
       _cameraIndex = front >= 0 ? front : 0;
       await _startCamera();
-    } on CameraException catch (error) {
+    } on CameraException catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.camera,
+      );
       _fail(_friendlyError(error));
-    } on Exception catch (error) {
+    } on Object catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.camera,
+      );
       _fail('The camera could not be started. $error');
     }
   }
@@ -129,11 +140,21 @@ class _CameraScreenState extends State<CameraScreen>
 
     try {
       await controller.initialize();
-    } on CameraException catch (error) {
+    } on CameraException catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.camera,
+      );
       await _disposeQuietly(controller);
       _fail(_friendlyError(error));
       return;
-    } on Object catch (error) {
+    } on Object catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.camera,
+      );
       await _disposeQuietly(controller);
       _fail('The camera could not be started (${error.runtimeType}).');
       return;
@@ -163,9 +184,19 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final XFile photo = await camera.takePicture();
       capturedPath = photo.path;
-    } on CameraException catch (error) {
+    } on CameraException catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.camera,
+      );
       _fail(_friendlyError(error));
-    } on Object catch (error) {
+    } on Object catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.camera,
+      );
       _fail('The photo could not be taken (${error.runtimeType}). Try again.');
     }
 
@@ -234,6 +265,10 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       await controller.dispose();
     } on Object catch (error) {
+      ErrorLogger.instance.logWarning(
+        'Camera dispose failed (ignored): $error',
+        source: ErrorLogSource.camera,
+      );
       debugPrint('Camera dispose failed (ignored): $error');
     }
   }
@@ -249,7 +284,12 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) {
         setState(() => _torchOn = next);
       }
-    } on CameraException catch (error) {
+    } on CameraException catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.camera,
+      );
       _fail(_friendlyError(error));
     }
   }
@@ -322,19 +362,19 @@ class _CameraScreenState extends State<CameraScreen>
                     const SizedBox(width: 10),
                     _CircleButton(
                       icon: Icons.flip_camera_ios_rounded,
-                      tooltip: 'Switch camera',
+                       tooltip: 'Switch camera',
                       onPressed: ready && _cameras.length > 1
                           ? () => unawaited(_switchCamera())
                           : null,
                     ),
-                    const Spacer(),
+                      const Spacer(),
                     Column(
                       children: <Widget>[
                         const Text(
-                          'FACE GEOMETRY',
-                          style: TextStyle(
+                         'FACE gEOMETRY',
+                         style: TextStyle(
                             fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
+                           fontWeight: FontWeight.w700,
                             letterSpacing: 2.4,
                             color: AppColors.textPrimary,
                           ),
@@ -392,9 +432,12 @@ class _CameraScreenState extends State<CameraScreen>
                         onPressed: ready && !_capturing && !_starting
                             ? () => unawaited(_capture())
                             : null,
-                      ),
+                       ),
+                      ],
+                     ],
+                     ],
+                   ),
                     ],
-                  ],
                 ),
               ),
             ),
@@ -542,7 +585,6 @@ class _ShutterButton extends StatelessWidget {
                         size: 24,
                       ),
               ),
-            ],
           ),
         ),
       ),

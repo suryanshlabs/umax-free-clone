@@ -73,7 +73,9 @@ void main() {
 
       expect(controller.phase, AnalysisPhase.failed);
       expect(controller.report, isNull);
-      expect(controller.errorMessage, faceNotDetectedMessage);
+      // A timeout is no longer reported as "face not detected": the user
+      // gets the honest timeout message instead.
+      expect(controller.errorMessage, detectionTimedOutMessage);
       controller.dispose();
     });
 

@@ -35,6 +35,15 @@ android {
             // publishing to a store, replace this with your own signing config;
             // see https://docs.flutter.dev/deployment/android#signing-the-app.
             signingConfig = signingConfigs.getByName("debug")
+            // Minification is deliberately OFF: the ML Kit / MediaPipe detector
+            // relies on native libraries and reflective glue that R8 can strip,
+            // which would fail scans silently. proguard-rules.pro holds the
+            // keep rules for the day it is switched on.
+            // isMinifyEnabled = true // do not enable without testing on a device
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

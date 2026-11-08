@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/error_logger.dart';
+import '../ml/face_mesh_source.dart';
 import '../ml/photo_prep.dart';
 import '../state/analysis_controller.dart';
 import 'results_screen.dart';
@@ -81,6 +83,11 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     } on Object catch (error, stackTrace) {
       // Preparation runs outside the controller, so without this an error
       // there left the screen spinning on "ANALYSING" with no failure state.
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.ui,
+      );
       debugPrint('Processing failed: $error');
       debugPrint('$stackTrace');
       if (!mounted) {
@@ -119,6 +126,12 @@ class _ProcessingScreenState extends State<ProcessingScreen>
   Widget build(BuildContext context) {
     final AnalysisController controller = context.watch<AnalysisController>();
     final bool failed = controller.phase == AnalysisPhase.failed;
+    // "NO READING" is reserved for the one case it describes — the detector
+    // genuinely found no face. Every other failure (timeout, partial mesh,
+    // unexpected fault) gets the honest "ANALYSIS FAILED" header, with the
+    // specific reason underneath it.
+    final bool noFace =
+        failed && controller.errorMessage == faceNotDetectedMessage;
 
     return Scaffold(
       body: SafeArea(
@@ -134,7 +147,11 @@ class _ProcessingScreenState extends State<ProcessingScreen>
                   ),
                   const Spacer(),
                   Text(
-                    failed ? 'NO READING' : 'ANALYSING',
+                    noFace
+                        ? 'NO READING'
+                        : failed
+                        ? 'ANALYSIS FAILED'
+                        : 'ANALYSING',
                     style: const TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,

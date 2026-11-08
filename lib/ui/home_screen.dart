@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../data/scan_history.dart';
 import 'analyze_source_sheet.dart';
 import 'compare_screen.dart';
+import 'error_logs_screen.dart';
 import 'home_widgets.dart';
 import 'home_widgets_tiles.dart';
 import 'multiangle_scan_sheet.dart';
@@ -126,6 +127,14 @@ class _HomeScreenState extends State<HomeScreen> {
               accent: AppColors.accentSoft,
               trailing: count == 0 ? null : '$count',
               onTap: () => _push(const WikiScreen()),
+            ),
+            const SizedBox(height: 12),
+            HomeModuleTile(
+              icon: Icons.bug_report_rounded,
+              title: 'Error Logs',
+              subtitle: 'On-device crash and error log — copy, share or clear',
+              accent: AppColors.danger,
+              onTap: () => _push(const ErrorLogsScreen()),
             ),
             const SizedBox(height: 30),
             const HomePrivacyFooter(),

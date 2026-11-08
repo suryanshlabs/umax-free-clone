@@ -88,7 +88,11 @@ class AnalysisController extends ChangeNotifier {
       }
 
       final RawFaceMetrics metrics = _service.measure(reading.points);
-      final AnalysisReport report = _engine.build(metrics, imagePath: path);
+      final AnalysisReport report = _engine.build(
+        metrics,
+        imagePath: path,
+        profile: _history?.profile,
+      );
 
       final List<String> warnings = List<String>.of(report.qualityWarnings);
       if (!reading.isLargeEnough) {
@@ -120,6 +124,7 @@ class AnalysisController extends ChangeNotifier {
         safetyNote: report.safetyNote,
         createdAt: report.createdAt,
         imagePath: report.imagePath,
+        profile: report.profile,
       );
       _report = enriched;
       _phase = AnalysisPhase.ready;

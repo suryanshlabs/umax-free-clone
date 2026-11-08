@@ -4,6 +4,7 @@ import 'calibration.dart';
 import 'feedback_engine.dart';
 import 'metrics.dart';
 import 'report.dart';
+import 'user_profile.dart';
 
 /// Normalises [RawFaceMetrics] into 0-100 scores and attaches feedback.
 ///
@@ -47,6 +48,7 @@ class ScoringEngine {
     RawFaceMetrics metrics, {
     String? imagePath,
     DateTime? createdAt,
+    UserProfile? profile,
   }) {
     final double symmetryScore = _symmetryScore(metrics);
     final double jawScore = _jawScore(metrics);
@@ -79,12 +81,17 @@ class ScoringEngine {
         id: MetricId.jawline,
         title: 'Jawline angularity',
         measurementLabel: 'Chin angle',
-        rawValue: '${metrics.jawAngleDegrees.toStringAsFixed(0)}\u00B0',
+        rawValue: '${metrics.jawAngleDegrees.toStringAsFixed(0)}°',
         score: jawScore,
         summary:
             'The angle the two jaw edges make at the chin. A sharper '
             'convergence reads as a more tapered, angular lower face.',
-        advice: feedback.forJawline(metrics, jawScore),
+        advice: feedback.forJawline(
+          metrics,
+          jawScore,
+          bmi: profile?.bmi,
+          bmiCategory: profile?.bmiCategory.$2,
+        ),
       ),
       MetricResult(
         id: MetricId.facialThirds,
@@ -123,140 +130,6 @@ class ScoringEngine {
       safetyNote: _safetyNote(metrics),
       createdAt: createdAt ?? DateTime.now(),
       imagePath: imagePath,
+      profile: profile,
     );
   }
-
-  /// The projection bonus, in score points.
-  ///
-  /// The two lowest scores are blended (weakest first), inverted into a
-  /// severity, and mapped onto the calibrated bonus range. A face whose weakest
-  /// measurement is near 0 gets the full bonus; one whose measurement is already
-  /// strong gets the minimum, because there is very little left to project.
-  double _projectionGain(List<double> scores) {
-    if (scores.isEmpty) {
-      return 0;
-    }
-    final List<double> ordered = List<double>.of(scores)
-      ..sort((double a, double b) => a.compareTo(b));
-    final double weakest = ordered.first;
-    final double blended = ordered.length == 1
-        ? weakest
-        : weakest * calibration.potentialPrimaryWeight +
-              ordered[1] * (1 - calibration.potentialPrimaryWeight);
-    final double severity = ((100 - blended) / 100).clamp(0.0, 1.0);
-    return calibration.potentialMinGain +
-        (calibration.potentialMaxGain - calibration.potentialMinGain) *
-            severity;
-  }
-
-  /// Mirrored faces lose nothing; every percentage point of difference past the
-  /// noise tolerance costs [AnalysisCalibration.symmetryPenaltyPerPercent].
-  double _symmetryScore(RawFaceMetrics metrics) {
-    final double excess =
-        metrics.eyeAsymmetryPercent - calibration.symmetryTolerancePercent;
-    if (excess <= 0) {
-      return 100;
-    }
-    return (100 - excess * calibration.symmetryPenaltyPerPercent).clamp(
-      0.0,
-      100.0,
-    );
-  }
-
-  /// 100 at or below the best angle, 0 at or above the worst angle, linear
-  /// between the two.
-  double _jawScore(RawFaceMetrics metrics) {
-    final double span =
-        calibration.jawAngleWorstDegrees - calibration.jawAngleBestDegrees;
-    if (span <= 0) {
-      return 0;
-    }
-    final double t =
-        (calibration.jawAngleWorstDegrees - metrics.jawAngleDegrees) / span;
-    return (t * 100).clamp(0.0, 100.0);
-  }
-
-  /// Full marks inside the free band, linear penalty past it.
-  double _thirdsScore(RawFaceMetrics metrics) {
-    final double excess =
-        metrics.thirdsDeviation - calibration.thirdsFreeDeviation;
-    if (excess <= 0) {
-      return 100;
-    }
-    return (100 - excess * calibration.thirdsPenaltyPerDeviation).clamp(
-      0.0,
-      100.0,
-    );
-  }
-
-  (String, String) _grade(double overall) {
-    if (overall >= 85) {
-      return (
-        'Excellent',
-        'Every category is sitting inside its reference band. There is nothing '
-            'structural left for a photo to tell you.',
-      );
-    }
-    if (overall >= 72) {
-      return (
-        'Strong',
-        'Most of the geometry is close to its reference band, with one area '
-            'carrying most of the deviation.',
-      );
-    }
-    if (overall >= 58) {
-      return (
-        'Balanced',
-        'A normal, mixed result. The scores below show which measurement is '
-            'pulling the total down, and what actually moves it.',
-      );
-    }
-    if (overall >= 42) {
-      return (
-        'Room to grow',
-        'Two or more categories sit outside their bands. The advice is ordered '
-            'by what has the most leverage, starting with how the photo was '
-            'taken.',
-      );
-    }
-    return (
-      'Focus area',
-      'Several measurements are far from their reference bands. Check the '
-          'capture conditions first: a turned or tilted head can produce this '
-          'result on a perfectly normal face.',
-    );
-  }
-
-  List<String> _qualityWarnings(RawFaceMetrics metrics) {
-    final List<String> warnings = <String>[];
-    if (metrics.yawIndex < calibration.frontalYawThreshold) {
-      warnings.add(
-        'Your head was turned during the scan (frontal index '
-        '${metrics.yawIndex.toStringAsFixed(2)}, needs '
-        '${calibration.frontalYawThreshold.toStringAsFixed(2)}). Turned heads '
-        'compress one side of the face and distort both symmetry and thirds.',
-      );
-    }
-    if (metrics.rollDegrees.abs() > calibration.maxRollDegrees) {
-      warnings.add(
-        'Your head was tilted ${metrics.rollDegrees.abs().toStringAsFixed(0)}'
-        '\u00B0. Level your eyes with the guide before capturing; tilt shifts '
-        'the vertical thirds more than anything else.',
-      );
-    }
-    return warnings;
-  }
-
-  String? _safetyNote(RawFaceMetrics metrics) {
-    if (metrics.eyeAsymmetryPercent < calibration.noticeableAsymmetryPercent) {
-      return null;
-    }
-    return 'This reading is ${metrics.eyeAsymmetryPercent.toStringAsFixed(1)}% '
-        'asymmetric, which is higher than the range this app expects from '
-        'capture noise. Most people are mildly asymmetric and it is nothing to '
-        'worry about. But if the difference appeared suddenly, or comes with '
-        'drooping, numbness, weakness or a change in how you speak, see a '
-        'doctor promptly \u2014 new one-sided facial change is a medical matter, '
-        'not a cosmetic one.';
-  }
-}

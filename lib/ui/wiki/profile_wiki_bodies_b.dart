@@ -1,5 +1,5 @@
-/// Body texts for the Profile Encyclopedia: chewing, muscle, body fat
-/// and tracking. Hardcoded and offline.
+// Body texts for the Profile Encyclopedia: chewing, muscle, body fat
+// and tracking. Hardcoded and offline.
 
 String chewBody() => '''
 Chewing on one side more than the other loads one masseter and one temporomandibular

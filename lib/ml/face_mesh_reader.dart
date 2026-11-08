@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_mesh_detection/google_mlkit_face_mesh_detection.dart';
 
@@ -67,7 +68,14 @@ class FaceMeshReader implements FaceMeshSource {
       );
     }
 
-    final Uint8List bytes = await file.readAsBytes();
+    final Uint8List bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } on Object {
+      throw const FacialAnalysisException(
+        'That photo could not be read from storage. Capture a new one.',
+      );
+    }
     final ExifOrientation orientation = readExifOrientation(bytes);
     final _ImageGeometry geometry = imageAspectRatio == null
         ? await _geometry(bytes, orientation)
@@ -81,13 +89,20 @@ class FaceMeshReader implements FaceMeshSource {
     } on TimeoutException {
       throw const FacialAnalysisException(faceNotDetectedMessage);
     } on PlatformException catch (error) {
+      // Native-side failures arrive with their detail in `error.message`;
+      // dropping it (code only) is what turned a clear detector fault into a
+      // generic "no reading".
+      final String detail = error.message ?? error.code;
+      debugPrint('Face mesh detector error (${error.code}): $detail');
       throw FacialAnalysisException(
-        'The face mesh detector could not read the image (${error.code}). '
-        'Try a new capture.',
+        'The face mesh detector could not read the image: $detail. '
+        'Try a new capture in good light.',
       );
-    } on Exception catch (error) {
+    } on Object catch (error) {
+      debugPrint('Face mesh detection failed: $error');
       throw FacialAnalysisException(
-        'Face mesh detection failed: $error. Try a new capture.',
+        'Face mesh detection failed (${error.runtimeType}). '
+        'Try a new capture in good light.',
       );
     }
 
@@ -103,7 +118,10 @@ class FaceMeshReader implements FaceMeshSource {
     // Both branches end in the same uniform space: fractions of the upright
     // image height, with x pre-multiplied by the aspect ratio when the SDK
     // normalised both axes to 0..1 (the only case where x and y disagree).
-    final double heightPx = geometry.heightPx ?? _verticalSpan(face.points);
+    final double rawHeightPx = geometry.heightPx ?? _verticalSpan(face.points);
+    final double heightPx = rawHeightPx.isFinite && rawHeightPx > 0
+        ? rawHeightPx
+        : 1.0;
     final double yScale = normalised ? 1.0 : 1.0 / heightPx;
     final double xScale = normalised ? geometry.aspect : 1.0 / heightPx;
 
@@ -123,10 +141,37 @@ class FaceMeshReader implements FaceMeshSource {
       seen.add(point.index);
     }
 
-    if (seen.length < FaceLandmarks.requiredCount) {
+    // Only the landmarks the measurements actually read are required. ML Kit
+    // can return the full 468-point list with a duplicate index replacing a
+    // non-critical point; demanding every single index turned those scans
+    // into a false "no reading" even though the face was fully measured.
+    const Set<int> needed = <int>{
+      FaceLandmarks.noseBridge,
+      FaceLandmarks.leftEyeCorner,
+      FaceLandmarks.rightEyeCorner,
+      FaceLandmarks.chin,
+      FaceLandmarks.jawEdgeLeft,
+      FaceLandmarks.jawEdgeRight,
+      FaceLandmarks.foreheadTop,
+      FaceLandmarks.glabella,
+      FaceLandmarks.noseBase,
+      FaceLandmarks.faceEdgeLeft,
+      FaceLandmarks.faceEdgeRight,
+    };
+    final List<int> missing = needed
+        .where((int index) => !seen.contains(index))
+        .toList();
+    if (missing.isNotEmpty) {
       throw FacialAnalysisException(
         'Only ${seen.length} of ${FaceLandmarks.requiredCount} landmarks came '
-        'back. Part of your face was outside the frame or covered.',
+        'back, missing key points (${missing.join(', ')}). Part of your face '
+        'was outside the frame or covered.',
+      );
+    }
+    if (seen.length < FaceLandmarks.requiredCount) {
+      debugPrint(
+        'Face mesh returned ${seen.length} of '
+        '${FaceLandmarks.requiredCount} landmarks; all key points present.',
       );
     }
 
@@ -267,14 +312,17 @@ class FaceMeshReader implements FaceMeshSource {
         bytes,
         targetWidth: 96,
       );
-      final ui.FrameInfo frame = await codec.getNextFrame();
-      final double aspect = frame.image.width / frame.image.height;
-      frame.image.dispose();
-      codec.dispose();
-      if (aspect.isFinite && aspect > 0) {
-        decodedAspect = aspect;
+      try {
+        final ui.FrameInfo frame = await codec.getNextFrame();
+        final double aspect = frame.image.width / frame.image.height;
+        frame.image.dispose();
+        if (aspect.isFinite && aspect > 0) {
+          decodedAspect = aspect;
+        }
+      } finally {
+        codec.dispose();
       }
-    } on Exception {
+    } on Object {
       decodedAspect = null;
     }
 

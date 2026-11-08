@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'core/error_logger.dart';
 import 'data/scan_history.dart';
 import 'state/analysis_controller.dart';
 import 'ui/home_screen.dart';
@@ -17,13 +18,21 @@ void main() {
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
+    // Load the on-device error log before anything can record into it.
+    await ErrorLogger.instance.load();
+
     FlutterError.onError = (FlutterErrorDetails details) {
+      ErrorLogger.instance.logError(
+        details.exception,
+        details.stack ?? StackTrace.current,
+      );
       debugPrint('CRASH: ${details.exception}');
       debugPrint(details.stack?.toString() ?? '(no stack)');
       FlutterError.presentError(details);
     };
     ui.PlatformDispatcher.instance.onError =
         (Object error, StackTrace stack) {
+          ErrorLogger.instance.logError(error, stack);
           debugPrint('CRASH: $error');
           debugPrint(stack.toString());
           return true;
@@ -43,6 +52,7 @@ void main() {
     );
     runApp(const FacialAnalysisApp());
   }, (Object error, StackTrace stack) {
+    ErrorLogger.instance.logError(error, stack);
     debugPrint('CRASH: $error');
     debugPrint(stack.toString());
   });

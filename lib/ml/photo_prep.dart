@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../core/error_logger.dart';
 import 'exif_orientation.dart';
 import 'square_crop.dart';
 
@@ -157,7 +158,12 @@ class PhotoPreparer {
       );
     } on PhotoPreparationException {
       rethrow;
-    } on Object catch (error) {
+    } on Object catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.analysis,
+      );
       debugPrint('Photo preparation failed: $error');
       throw const PhotoPreparationException(
         'That image could not be opened. Pick a JPEG or PNG photo and try '

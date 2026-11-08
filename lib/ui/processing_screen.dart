@@ -54,28 +54,42 @@ class _ProcessingScreenState extends State<ProcessingScreen>
   Future<void> _run() async {
     final AnalysisController controller = context.read<AnalysisController>();
 
-    // Every input — camera or gallery — is rotated upright and cropped to a
-    // fixed 1080x1080 square before detection, so two scans of the same face
-    // are measured by the same ruler.
-    final String path = await _prepare(widget.imagePath);
-    if (!mounted) {
-      return;
-    }
-    if (path != widget.imagePath) {
-      setState(() => _displayPath = path);
-    }
+    try {
+      // Every input — camera or gallery — is rotated upright and cropped to a
+      // fixed 1080x1080 square before detection, so two scans of the same face
+      // are measured by the same ruler.
+      final String path = await _prepare(widget.imagePath);
+      if (!mounted) {
+        return;
+      }
+      if (path != widget.imagePath) {
+        setState(() => _displayPath = path);
+      }
 
-    await controller.analyse(path);
-    if (!mounted) {
-      return;
-    }
-    _stepTimer?.cancel();
-    if (controller.phase == AnalysisPhase.ready) {
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (BuildContext context) => const ResultsScreen(),
-        ),
-      );
+      await controller.analyse(path);
+      if (!mounted) {
+        return;
+      }
+      _stepTimer?.cancel();
+      if (controller.phase == AnalysisPhase.ready) {
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (BuildContext context) => const ResultsScreen(),
+          ),
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      // Preparation runs outside the controller, so without this an error
+      // there left the screen spinning on "ANALYSING" with no failure state.
+      debugPrint('Processing failed: $error');
+      debugPrint('$stackTrace');
+      if (!mounted) {
+        return;
+      }
+      _stepTimer?.cancel();
+      if (controller.phase != AnalysisPhase.failed) {
+        controller.failWithMessage('Analysis failed (${error.runtimeType}): $error');
+      }
     }
   }
 
@@ -88,7 +102,7 @@ class _ProcessingScreenState extends State<ProcessingScreen>
     try {
       final PreparedPhoto photo = await const PhotoPreparer().preparePath(path);
       return photo.path;
-    } on Exception catch (error) {
+    } on Object catch (error) {
       debugPrint('Photo preparation failed, using the original: $error');
       return path;
     }

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_mesh_detection/google_mlkit_face_mesh_detection.dart';
 
+import '../core/error_logger.dart';
 import '../core/facial_analysis_service.dart';
 import '../core/landmarks.dart';
 import '../core/vector.dart';
@@ -42,10 +43,15 @@ class FaceMeshReader implements FaceMeshSource {
 
   /// Hard ceiling on one detection pass.
   ///
-  /// A warm detector returns in 150-600 ms and a cold one in about a second, so
-  /// eight seconds means the plugin is wedged rather than slow. The future keeps
-  /// running in the background; the app stops waiting for it.
-  static const Duration detectionTimeout = Duration(seconds: 8);
+  /// A warm detector returns in 150-600 ms. A cold one, though — first run
+  /// after install or after the system reclaimed the process, on a mid-range
+  /// phone with a busy CPU — can take well over eight seconds just to load the
+  /// model into memory. The previous 8 s deadline turned those cold starts
+  /// into a false "Face not detected" (NO READING) even though the face was
+  /// right there. Thirty seconds is long enough for the model to load on
+  /// almost anything, and short enough that a genuinely wedged plugin call
+  /// still gives up.
+  static const Duration detectionTimeout = Duration(seconds: 30);
 
   final FaceMeshDetector _detector;
   bool _disposed = false;
@@ -87,7 +93,11 @@ class FaceMeshReader implements FaceMeshSource {
           .processImage(InputImage.fromFilePath(path))
           .timeout(detectionTimeout);
     } on TimeoutException {
-      throw const FacialAnalysisException(faceNotDetectedMessage);
+      ErrorLogger.instance.logWarning(
+        'Face mesh detection exceeded ${detectionTimeout.inSeconds}s.',
+        source: ErrorLogSource.facemesh,
+      );
+      throw const FacialAnalysisException(detectionTimedOutMessage);
     } on PlatformException catch (error) {
       // Native-side failures arrive with their detail in `error.message`;
       // dropping it (code only) is what turned a clear detector fault into a
@@ -98,7 +108,12 @@ class FaceMeshReader implements FaceMeshSource {
         'The face mesh detector could not read the image: $detail. '
         'Try a new capture in good light.',
       );
-    } on Object catch (error) {
+    } on Object catch (error, stackTrace) {
+      ErrorLogger.instance.logError(
+        error,
+        stackTrace,
+        source: ErrorLogSource.facemesh,
+      );
       debugPrint('Face mesh detection failed: $error');
       throw FacialAnalysisException(
         'Face mesh detection failed (${error.runtimeType}). '
@@ -162,10 +177,17 @@ class FaceMeshReader implements FaceMeshSource {
         .where((int index) => !seen.contains(index))
         .toList();
     if (missing.isNotEmpty) {
+      ErrorLogger.instance.logWarning(
+        'Incomplete face mesh: ${seen.length} of '
+        '${FaceLandmarks.requiredCount} landmarks, missing $missing.',
+        source: ErrorLogSource.facemesh,
+        context: <String, Object?>{'landmarks': seen.length},
+      );
       throw FacialAnalysisException(
         'Only ${seen.length} of ${FaceLandmarks.requiredCount} landmarks came '
         'back, missing key points (${missing.join(', ')}). Part of your face '
-        'was outside the frame or covered.',
+        'was outside the frame or covered. Keep your face straight on, in '
+        'bright light, with nothing covering it.',
       );
     }
     if (seen.length < FaceLandmarks.requiredCount) {
@@ -338,7 +360,9 @@ class FaceMeshReader implements FaceMeshSource {
       rawWidth = descriptor.width;
       rawHeight = descriptor.height;
       descriptor.dispose();
-    } on Exception {
+    } on Object {
+      // Any failure here (including Errors) just means "unknown dimensions";
+      // the aspect fallback below keeps the maths isotropic either way.
       rawWidth = null;
       rawHeight = null;
     } finally {

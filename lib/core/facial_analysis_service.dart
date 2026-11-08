@@ -32,6 +32,12 @@ class FacialAnalysisService {
 
   final AnalysisCalibration calibration;
 
+  /// Smallest denominator worth dividing by. Every ratio below is measured in
+  /// fractions of the image height, so a real face part is tens of times this
+  /// large — anything at or below it is a collapsed mesh, not a measurement,
+  /// and dividing by it would produce Infinity or NaN scores downstream.
+  static const double minScale = 0.001;
+
   /// Measures [points] and returns the raw geometry.
   ///
   /// Throws [FacialAnalysisException] when the mesh is incomplete, contains
@@ -58,7 +64,7 @@ class FacialAnalysisService {
     final Vec2 faceRight = _point(points, FaceLandmarks.faceEdgeRight);
 
     final double interocular = leftEye.distanceTo(rightEye);
-    if (interocular <= 1e-9 || !interocular.isFinite) {
+    if (interocular <= minScale || !interocular.isFinite) {
       throw const FacialAnalysisException(
         'The two eye corners are on top of each other, so the mesh cannot be '
         'scaled. Retake the photo with your whole face in frame.',
@@ -73,7 +79,7 @@ class FacialAnalysisService {
     final double dLeft = noseBridge.distanceTo(leftEye);
     final double dRight = noseBridge.distanceTo(rightEye);
     final double meanEyeDistance = (dLeft + dRight) / 2;
-    final double eyeAsymmetryPercent = meanEyeDistance <= 1e-9
+    final double eyeAsymmetryPercent = meanEyeDistance <= minScale
         ? 0.0
         : ((dLeft - dRight).abs() / meanEyeDistance) * 100;
 
@@ -91,7 +97,7 @@ class FacialAnalysisService {
     final double middle = (noseBase.y - glabella.y).abs();
     final double lower = (chin.y - noseBase.y).abs();
     final double totalHeight = upper + middle + lower;
-    if (totalHeight <= 1e-9 || !totalHeight.isFinite) {
+    if (totalHeight <= minScale || !totalHeight.isFinite) {
       throw const FacialAnalysisException(
         'The forehead-to-chin span measured as zero. Retake the photo with the '
         'full face, hairline included, inside the guide.',
@@ -102,13 +108,13 @@ class FacialAnalysisService {
     final double leftHalf = noseBridge.distanceTo(faceLeft);
     final double rightHalf = noseBridge.distanceTo(faceRight);
     final double widerHalf = math.max(leftHalf, rightHalf);
-    final double yawIndex = widerHalf <= 1e-9
+    final double yawIndex = widerHalf <= minScale
         ? 1.0
         : math.min(leftHalf, rightHalf) / widerHalf;
 
     return RawFaceMetrics(
       eyeAsymmetryPercent: eyeAsymmetryPercent,
-      eyeDistanceRatio: dRight <= 1e-9 ? 1.0 : dLeft / dRight,
+      eyeDistanceRatio: dRight <= minScale ? 1.0 : dLeft / dRight,
       jawAngleDegrees: jawAngleDegrees,
       upperThirdFraction: upper / totalHeight,
       middleThirdFraction: middle / totalHeight,
@@ -121,6 +127,11 @@ class FacialAnalysisService {
   }
 
   Vec2 _point(List<Vec2> points, int index) {
+    if (index < 0 || index >= points.length) {
+      throw FacialAnalysisException(
+        'Landmark $index is outside the ${points.length}-point mesh.',
+      );
+    }
     final Vec2 point = points[index];
     if (!point.isFinite) {
       throw FacialAnalysisException(

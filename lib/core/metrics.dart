@@ -75,10 +75,14 @@ class RawFaceMetrics {
   /// Ratios re-expressed against the middle third, for display. A 1 : 1 : 1 face
   /// shows as `1.00 : 1.00 : 1.00`.
   double get upperToMiddleRatio =>
-      middleThirdFraction == 0 ? 0 : upperThirdFraction / middleThirdFraction;
+      middleThirdFraction.abs() <= 0.001
+          ? 0
+          : upperThirdFraction / middleThirdFraction;
 
   double get lowerToMiddleRatio =>
-      middleThirdFraction == 0 ? 0 : lowerThirdFraction / middleThirdFraction;
+      middleThirdFraction.abs() <= 0.001
+          ? 0
+          : lowerThirdFraction / middleThirdFraction;
 
   /// Largest third, as a readable name.
   String get dominantThird {

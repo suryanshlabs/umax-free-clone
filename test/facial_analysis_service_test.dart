@@ -174,6 +174,16 @@ void main() {
         throwsA(isA<FacialAnalysisException>()),
       );
     });
+
+    test('reads a mesh whose points are far below the minimum scale', () {
+      // Everything collapsed onto one spot: also a divide-by-zero probe.
+      expect(
+        () => service.measure(
+          List<Vec2>.filled(468, const Vec2(10, 10)),
+        ),
+        throwsA(isA<FacialAnalysisException>()),
+      );
+    });
   });
 
   group('ScoringEngine', () {
@@ -238,6 +248,47 @@ void main() {
       expect(symmetric.safetyNote, isNull);
       expect(asymmetric.safetyNote, isNotNull);
       expect(asymmetric.safetyNote, contains('doctor'));
+    });
+
+    test('zero middle third returns zero ratios instead of dividing', () {
+      const RawFaceMetrics metrics = RawFaceMetrics(
+        eyeAsymmetryPercent: 1,
+        eyeDistanceRatio: 1,
+        jawAngleDegrees: 110,
+        upperThirdFraction: 0.5,
+        middleThirdFraction: 0,
+        lowerThirdFraction: 0.5,
+        interocularDistance: 0.3,
+        yawIndex: 1,
+        rollDegrees: 0,
+        landmarkCount: 468,
+      );
+
+      expect(metrics.upperToMiddleRatio, 0);
+      expect(metrics.lowerToMiddleRatio, 0);
+      // And the full build still completes with finite, in-range scores.
+      final AnalysisReport report = engine.build(metrics);
+      for (final MetricResult metric in report.metrics) {
+        expect(metric.score.isFinite, isTrue);
+        expect(metric.score, inInclusiveRange(0, 100));
+      }
+    });
+
+    test('throws a ScoringException on non-finite measurements', () {
+      const RawFaceMetrics metrics = RawFaceMetrics(
+        eyeAsymmetryPercent: 1,
+        eyeDistanceRatio: 1,
+        jawAngleDegrees: double.nan,
+        upperThirdFraction: 0.333,
+        middleThirdFraction: 0.334,
+        lowerThirdFraction: 0.333,
+        interocularDistance: 0.3,
+        yawIndex: 1,
+        rollDegrees: 0,
+        landmarkCount: 468,
+      );
+
+      expect(() => engine.build(metrics), throwsA(isA<ScoringException>()));
     });
 
     test('share text summarises every metric', () {

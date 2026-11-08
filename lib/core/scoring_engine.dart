@@ -7,34 +7,9 @@ import 'report.dart';
 import 'user_profile.dart';
 
 /// Normalises [RawFaceMetrics] into 0-100 scores and attaches feedback.
-///
-/// Score definitions (all clamped to `[0, 100]`):
-///
-/// * **Eye symmetry** — `100 - penalty * max(0, asymmetry - tolerance)`.
-///   Mirrored faces score 100; the penalty is linear in the percentage
-///   difference so the number stays readable across the whole range.
-/// * **Jawline angularity** — linear from
-///   [AnalysisCalibration.jawAngleBestDegrees] (100 points) down to
-///   [AnalysisCalibration.jawAngleWorstDegrees] (0 points). A smaller chin angle
-///   means the jaw edges converge more sharply, which is the geometry people
-///   read as a tapered, angular jaw.
-/// * **Facial thirds** — `100 - penalty * max(0, deviation - freeBand)`, where
-///   deviation is the total absolute distance from a 1 : 1 : 1 split.
-///
-/// Two numbers come out of those three scores:
-///
-/// * **Overall** is the weighted mean. It is deliberately strict: it is what the
-///   landmark coordinates say, with no allowance for a bad photo or a bad day.
-/// * **Potential** is the projection. It takes the two weakest measurements,
-///   measures the headroom those have between them, and adds a bonus of
-///   [AnalysisCalibration.potentialMinGain] to
-///   [AnalysisCalibration.potentialMaxGain] points accordingly. The weakest
-///   measurement is weighted by [AnalysisCalibration.potentialPrimaryWeight] so
-///   one noisy score cannot own the whole projection. Capped at 100, because
-///   that is where the scale ends.
-///
-/// Weights, bands, penalties and the projection range all live in
-/// [AnalysisCalibration]; nothing is hard-coded here.
+/// Overall is the weighted mean of the three scores; Potential adds a
+/// calibrated bonus sized by headroom in the two weakest measurements.
+/// Weights, bands and penalties live in [AnalysisCalibration].
 class ScoringEngine {
   const ScoringEngine({
     this.calibration = const AnalysisCalibration(),
@@ -133,3 +108,90 @@ class ScoringEngine {
       profile: profile,
     );
   }
+
+  double _projectionGain(List<double> scores) {
+    if (scores.isEmpty) return 0;
+    final List<double> ordered = List<double>.of(scores)
+      ..sort((double a, double b) => a.compareTo(b));
+    final double weakest = ordered.first;
+    final double blended = ordered.length == 1
+        ? weakest
+        : weakest * calibration.potentialPrimaryWeight +
+              ordered[1] * (1 - calibration.potentialPrimaryWeight);
+    final double severity = ((100 - blended) / 100).clamp(0.0, 1.0);
+    return calibration.potentialMinGain +
+        (calibration.potentialMaxGain - calibration.potentialMinGain) * severity;
+  }
+
+  double _symmetryScore(RawFaceMetrics metrics) {
+    final double excess =
+        metrics.eyeAsymmetryPercent - calibration.symmetryTolerancePercent;
+    if (excess <= 0) return 100;
+    return (100 - excess * calibration.symmetryPenaltyPerPercent).clamp(0.0, 100.0);
+  }
+
+  double _jawScore(RawFaceMetrics metrics) {
+    final double span =
+        calibration.jawAngleWorstDegrees - calibration.jawAngleBestDegrees;
+    if (span <= 0) return 0;
+    final double t =
+        (calibration.jawAngleWorstDegrees - metrics.jawAngleDegrees) / span;
+    return (t * 100).clamp(0.0, 100.0);
+  }
+
+  double _thirdsScore(RawFaceMetrics metrics) {
+    final double excess =
+        metrics.thirdsDeviation - calibration.thirdsFreeDeviation;
+    if (excess <= 0) return 100;
+    return (100 - excess * calibration.thirdsPenaltyPerDeviation).clamp(0.0, 100.0);
+  }
+
+  (String, String) _grade(double overall) {
+    if (overall >= 85) {
+      return ('Excellent', 'Every category is sitting inside its reference band. There is nothing structural left for a photo to tell you.');
+    }
+    if (overall >= 72) {
+      return ('Strong', 'Most of the geometry is close to its reference band, with one area carrying most of the deviation.');
+    }
+    if (overall >= 58) {
+      return ('Balanced', 'A normal, mixed result. The scores below show which measurement is pulling the total down, and what actually moves it.');
+    }
+    if (overall >= 42) {
+      return ('Room to grow', 'Two or more categories sit outside their bands. The advice is ordered by what has the most leverage, starting with how the photo was taken.');
+    }
+    return ('Focus area', 'Several measurements are far from their reference bands. Check the capture conditions first: a turned or tilted head can produce this result on a perfectly normal face.');
+  }
+
+  List<String> _qualityWarnings(RawFaceMetrics metrics) {
+    final List<String> warnings = <String>[];
+    if (metrics.yawIndex < calibration.frontalYawThreshold) {
+      warnings.add(
+        'Your head was turned during the scan (frontal index '
+        '${metrics.yawIndex.toStringAsFixed(2)}, needs '
+        '${calibration.frontalYawThreshold.toStringAsFixed(2)}). Turned heads '
+        'compress one side of the face and distort both symmetry and thirds.',
+      );
+    }
+    if (metrics.rollDegrees.abs() > calibration.maxRollDegrees) {
+      warnings.add(
+        'Your head was tilted ${metrics.rollDegrees.abs().toStringAsFixed(0)}°'
+        '. Level your eyes with the guide before capturing; tilt shifts '
+        'the vertical thirds more than anything else.',
+      );
+    }
+    return warnings;
+  }
+
+  String? _safetyNote(RawFaceMetrics metrics) {
+    if (metrics.eyeAsymmetryPercent < calibration.noticeableAsymmetryPercent) {
+      return null;
+    }
+    return 'This reading is ${metrics.eyeAsymmetryPercent.toStringAsFixed(1)}% '
+        'asymmetric, which is higher than the range this app expects from '
+        'capture noise. Most people are mildly asymmetric and it is nothing to '
+        'worry about. But if the difference appeared suddenly, or comes with '
+        'drooping, numbness, weakness or a change in how you speak, see a '
+        'doctor promptly — new one-sided facial change is a medical matter, '
+        'not a cosmetic one.';
+  }
+}

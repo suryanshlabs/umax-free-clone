@@ -14,6 +14,12 @@ import 'widgets/face_guide_painter.dart';
 /// pixels per feature than a preview stream, and the maths is a one-shot
 /// calculation. Live preview analysis would trade accuracy for motion feedback
 /// this app does not need.
+///
+/// Lifecycle, on purpose: there is no image stream to stop and no
+/// `stopImageStream` call anywhere in this app, so there is nothing to race
+/// against the analysis. The controller is disposed only *after* the
+/// `takePicture` future has resolved — at which point the JPEG is fully on
+/// disk — and analysis then runs on the file with no camera involved.
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key, this.returnPathOnly = false});
 
@@ -124,13 +130,17 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       await controller.initialize();
     } on CameraException catch (error) {
-      await controller.dispose();
+      await _disposeQuietly(controller);
       _fail(_friendlyError(error));
+      return;
+    } on Object catch (error) {
+      await _disposeQuietly(controller);
+      _fail('The camera could not be started (${error.runtimeType}).');
       return;
     }
 
     if (!mounted) {
-      await controller.dispose();
+      await _disposeQuietly(controller);
       return;
     }
 
@@ -155,6 +165,8 @@ class _CameraScreenState extends State<CameraScreen>
       capturedPath = photo.path;
     } on CameraException catch (error) {
       _fail(_friendlyError(error));
+    } on Object catch (error) {
+      _fail('The photo could not be taken (${error.runtimeType}). Try again.');
     }
 
     if (!mounted) {
@@ -176,12 +188,14 @@ class _CameraScreenState extends State<CameraScreen>
 
     // Release the camera while ML Kit works: two heavy camera-adjacent
     // pipelines at once is how mid-range phones start dropping frames.
+    // The photo is already written to disk by now, so disposing here cannot
+    // affect the analysis; a dispose error is logged, never fatal.
     setState(() {
       _camera = null;
       _capturing = false;
       _starting = true;
     });
-    await camera.dispose();
+    await _disposeQuietly(camera);
     if (!mounted) {
       return;
     }
@@ -207,8 +221,21 @@ class _CameraScreenState extends State<CameraScreen>
       _starting = true;
       _cameraIndex = (_cameraIndex + 1) % _cameras.length;
     });
-    await previous?.dispose();
+    await _disposeQuietly(previous);
     await _startCamera();
+  }
+
+  /// Disposes a controller without letting a platform dispose error escape
+  /// as an unhandled async failure.
+  Future<void> _disposeQuietly(CameraController? controller) async {
+    if (controller == null) {
+      return;
+    }
+    try {
+      await controller.dispose();
+    } on Object catch (error) {
+      debugPrint('Camera dispose failed (ignored): $error');
+    }
   }
 
   Future<void> _toggleTorch() async {

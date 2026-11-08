@@ -1,5 +1,5 @@
-/// Body texts for the Profile Encyclopedia: Forward Facial Growth and
-/// Symmetry Optimization. Hardcoded and offline.
+// Body texts for the Profile Encyclopedia: Forward Facial Growth and
+// Symmetry Optimization. Hardcoded and offline.
 
 String mewingBody() => '''
 Tongue posture — what people call "mewing" — is the habit of resting the whole

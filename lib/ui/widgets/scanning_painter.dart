@@ -123,6 +123,7 @@ class ScanningPainter extends CustomPainter {
           AppColors.accent.withValues(alpha: 0.28),
           AppColors.mint.withValues(alpha: 0.04),
         ],
+        <double>[0.0, 0.5, 1.0],
       );
     canvas.drawRect(
       Rect.fromLTRB(rect.left, scanY - 90, rect.right, scanY + 8),

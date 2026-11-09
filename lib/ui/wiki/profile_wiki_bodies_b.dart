@@ -58,32 +58,30 @@ Practical notes
 ''';
 
 String fatBody() => '''
-Body fat is the single most reliable lever for facial definition in most people,
-because the jaw-border fat and the submental fat (under the chin) blunt the jawline
-the app measures.
+Body composition is part of the picture, but it is not something this app measures
+or advises on. The face mesh only describes geometry: where landmarks sit in one
+photo. Height, weight, age and BMI live in the separate BMI Calculator and are
+never read by the facial analysis.
 
-What the evidence supports
-- Subcutaneous fat sits over the mandible; losing it lowers the fat layer everywhere,
-  and the face often shows it early because the fat layer there is thin.
-- A sustainable calorie deficit with adequate protein and resistance training is the
-  well-evidenced route to losing fat generally.
-- Where you store fat is largely genetic; for some people the face stays softer even
-  at a healthy weight.
+What the geometry does and does not show
+- Fat sits over the mandible and under the chin, so the soft-tissue outline can
+  differ between two people with the same bone structure. A frontal photo cannot
+  separate the two.
+- Where fat is stored is largely genetic, and it changes slowly. A single scan
+  cannot tell you whether a jaw-border difference is bone, muscle, fat or fluid.
+- Body weight and BMI are not part of any facial measurement in this app, and a
+  BMI result never changes a face reading in either direction.
 
-What it does not support
-- Spot-reduction of facial fat does not work; you cannot choose to lose it from the
-  jaw and nowhere else.
-- A perfectly angular jaw at any healthy weight is not realistic for everyone.
+What the evidence does not support
+- Spot reduction: you cannot choose to lose fat from the jaw only.
+- The idea that one particular jaw shape is healthy or unhealthy. Jaw geometry
+  is not a health marker.
 
 Practical notes
-- Aim for slow loss — about 0.5% of body weight per week — so the face does not read
-  gaunt.
-- A modest deficit with enough protein and some resistance training is the approach
-  with the best evidence for keeping shape while losing fat.
-- Expect the jawline to change gradually over months, not days; the app's comparison
-  over a month or two is the honest timescale.
-- If you are already lean and the jaw still reads soft, the next levers are fluid
-  retention and capture, not more weight loss.
+- If you want to track body composition, use the BMI tool as a rough screening
+  number and read its limitations; it deliberately gives no targets or diet plan.
+- If a change in your face or jaw is sudden, painful, or one-sided, that is a
+  clinical question and belongs with a doctor, not a scan.
 ''';
 
 String trackBody() => '''

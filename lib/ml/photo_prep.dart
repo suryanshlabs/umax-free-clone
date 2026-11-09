@@ -98,7 +98,16 @@ class PhotoPreparer {
     ui.Image? image;
     ui.Image? squared;
     try {
-      final ui.Codec codec = await ui.instantiateImageCodec(raw);
+      // Decode at a bounded resolution. A 12 MP capture needs ~48 MB as a raw
+      // bitmap, which is a real risk on a 3 GB phone; decoding into a buffer no
+      // larger than 2x the output keeps the crop sharp and the peak allocation
+      // around a tenth of that.
+      final int decodeCap = targetSize * 2;
+      final ui.Codec codec = await ui.instantiateImageCodec(
+        raw,
+        targetWidth: decodeCap,
+        targetHeight: decodeCap,
+      );
       final ui.FrameInfo frame = await codec.getNextFrame();
       image = frame.image;
 
@@ -141,7 +150,9 @@ class PhotoPreparer {
       }
 
       final Directory directory = await getTemporaryDirectory();
-      await _sweep(directory);
+      // No blind sweep here: the newest prepared square is referenced by the
+      // scan that is being saved. Unreferenced squares are pruned by
+      // ImageStore when the history loads.
       final File output = File(
         '${directory.path}/$filePrefix'
         '${DateTime.now().microsecondsSinceEpoch}.png',
@@ -172,20 +183,6 @@ class PhotoPreparer {
     } finally {
       squared?.dispose();
       image?.dispose();
-    }
-  }
-
-  /// Deletes squares left behind by earlier runs. Bounded work: only this
-  /// app's own temporary directory, only this app's own prefix.
-  Future<void> _sweep(Directory directory) async {
-    try {
-      await for (final FileSystemEntity entity in directory.list()) {
-        if (entity is File && entity.path.contains(filePrefix)) {
-          await entity.delete();
-        }
-      }
-    } on FileSystemException {
-      // A failed clean-up is cosmetic; the write below still works.
     }
   }
 }

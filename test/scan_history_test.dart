@@ -11,7 +11,6 @@ SavedScan buildScan({
     id: id,
     createdAt: at,
     overallScore: score,
-    grade: 'Balanced',
     metrics: const <SavedMetric>[
       SavedMetric(
         id: MetricId.eyeSymmetry,
@@ -58,7 +57,10 @@ void main() {
     expect(reloaded.scans, hasLength(2));
     expect(reloaded.scans.first.id, 'newer');
     expect(reloaded.scans.first.overallScore, 68);
-    expect(reloaded.scans.first.grade, 'Balanced');
+    expect(
+      reloaded.scans.first.bandLabel,
+      ReportBand.fromScore(reloaded.scans.first.overallScore).label,
+    );
     expect(reloaded.scans.first.metric(MetricId.jawline)?.rawValue, '96°');
     expect(reloaded.scans.first.metric(MetricId.jawline)?.score, 64);
     expect(reloaded.scans.last.id, 'older');

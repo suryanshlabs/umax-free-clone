@@ -29,11 +29,12 @@ const List<_Entry> _entries = <_Entry>[
     evidence: EvidenceStrength.measurement,
     body:
         'Three geometric ratios from one 2D photo: the eye-line against the '
-        'nose bridge, the angle of the jaw at the chin, and the balance of the '
-        'hairline-to-brow, brow-to-nose and nose-to-chin spans. Nothing here is '
-        'an attractiveness score, a ranking, or a prediction. A score of 74 '
-        'means "these ratios sit near the middle of the reference band this app '
-        'defines", not "you are a 74".',
+        'midline, the angle of the jaw contour at the chin, and the balance of '
+        'the hairline-to-brow, brow-to-nose-base and nose-base-to-chin spans. '
+        'Nothing here is an attractiveness score, a ranking, or a prediction. '
+        'The combined value is an agreement index: 74 means "these measurements '
+        'sit part-way inside the reference bands this app defines", not "you '
+        'are a 74". There is no potential score and no grade.',
   ),
   _Entry(
     title: 'The camera moves the numbers more than you do',
@@ -416,8 +417,8 @@ class _SavedTile extends StatelessWidget {
           ),
           subtitle: Text(
             scan.isFriend
-                ? 'Shared report · ${scan.grade} · ${scan.shortDate}'
-                : '${scan.grade} · ${scan.shortDate}',
+                ? 'Shared report · ${scan.bandLabel} · ${scan.shortDate}'
+                : '${scan.bandLabel} · ${scan.shortDate}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(

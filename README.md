@@ -2,7 +2,7 @@
 
 An offline facial-geometry app. Google's MediaPipe Face Mesh (468 landmarks,
 shipped through ML Kit's on-device face mesh detector) runs entirely inside the
-app process; every distance, angle, score and piece of advice is computed in Dart
+app process; every distance, angle, agreement value and note is computed in Dart
 on the phone. There is no backend, no account, no analytics and no upload.
 
 Built with **Flutter** and the **`google_mlkit_face_mesh_detection`** plugin,
@@ -91,56 +91,57 @@ CameraScreen  ──takePicture──▶  ProcessingScreen  ──▶  ResultsSc
 
 All coordinates are converted to fractions of image height before the maths runs,
 so a 12 MP photo and a 1080p photo of the same face produce the same numbers.
+Decoding is capped at 2× the 1080-pixel output, which keeps the peak bitmap
+around 18 MB instead of ~48 MB on a 3 GB phone.
 MediaPipe returns pixel coordinates; the reader divides by the upright pixel
 height and detects (and aspect-corrects) SDK builds that return 0..1 instead.
 
 | Metric | Landmarks | Formula |
 | --- | --- | --- |
-| **Eye symmetry** | nose bridge `1`, outer eye corners `33` / `263` | `d_left = |1−33|`, `d_right = |1−263|`, asymmetry `= |d_left − d_right| / mean(d_left, d_right) × 100`. The ratio `d_left/d_right` is reported alongside it. |
-| **Jawline angularity** | jaw edges `172` / `397`, chin `152` | The interior angle at the chin between the two jaw-edge vectors: `acos( (a·b) / (|a||b|) )`. Smaller angle = the edges converge more sharply = a more tapered jaw. |
-| **Facial thirds** | hairline `10` → glabella `9` → nose base `2` → chin `152` | Vertical spans `10→9`, `9→2`, `2→152`, each divided by the total. Reported as ratios against the middle third (`1.00`), compared with the ideal `1 : 1 : 1`. |
+| **Symmetry residual** | midline `168` (nasion) → `152` (chin); pairs `33/263`, `133/362`, `61/291`, `234/454` | For every mirrored pair, the difference between the perpendicular distances to the face's own midline, divided by the interocular distance and averaged over the four pairs. Measuring against the face's own midline (instead of one nose point) removes the old errors: a large interpupillary distance no longer reads as asymmetry, and a turned head moves both points of a pair together, which cancels. |
+| **Chin angle** | jaw edges `172` / `397`, chin `152` | The interior angle at the chin between the two jaw-contour vectors: `acos( (a·b) / (|a||b|) )`. It is a frontal lower-face contour measurement, not a clinical gonial angle. |
+| **Facial thirds** | hairline `10` → glabella `9` → subnasale (midpoint of `94`/`195`) → chin `152` | Vertical spans `10→9`, `9→subnasale`, `subnasale→152`, each divided by the total, compared with an even `1 : 1 : 1` split. |
 
-Pose guards are computed from the same mesh and reported as capture notes rather
-than silently ignored:
+### Pose and landmark validation
 
-* **Yaw index** — `min(d_left, d_right) / max(d_left, d_right)` using the nose
-  bridge's distance to face edges `234` / `454`; below `0.82` the head was turned.
-* **Roll** — the signed tilt of the `33 → 263` line; beyond `8°` the vertical
-  thirds are unreliable.
+The service refuses a measurement instead of scoring a broken mesh:
 
-### An honest note about landmark `2`
-
-In the canonical MediaPipe mesh, index `2` sits at the top of the nose bridge
-(the radix), not at the base of the nose. The middle third therefore measures
-glabella-to-radix, which reads shorter than a textbook brow-to-subnasale third.
-This is implemented exactly as specified, and the app says so in the thirds card
-under "Why this score is strict". If you would rather measure the true subnasale,
-`FaceLandmarks` already exposes `noseWingLeft` (`94`) and `noseWingRight` (`195`);
-swap the `noseBase` lookup in `FacialAnalysisService` for their midpoint.
+* **Completeness** — fewer than 468 points is an error; the reader only needs the
+  landmarks the measurements read, so one duplicate index no longer turns a good
+  face into "no reading".
+* **Finite coordinates** — any NaN/Infinity landmark is rejected by index.
+* **Scale** — a zero-length interocular reference is rejected.
+* **Plausibility** — face width ÷ interocular distance must be `1.5-4.2`, and
+  nasion-to-chin ÷ interocular `0.9-3.2`. Outside those, the mesh is distorted
+  (occlusion, extreme angle, failed detection) and is refused with an explanation.
+* **Vertical order** — glabella above subnasale above chin, within 2% of face
+  height; otherwise the mesh is upside down and is refused.
+* **Pose notes** — yaw index below `0.82` (head turned) and roll beyond `8°` are
+  reported as capture notes; a partial mesh or odd spread ratio adds a note too.
 
 ## Scoring and calibration
 
 Every score is `0–100` and every threshold lives in one place:
 `lib/core/calibration.dart`. Nothing is hard-coded in the scoring engine.
 
-| Score | Definition | Defaults |
+| Agreement value | Definition | Defaults |
 | --- | --- | --- |
-| Eye symmetry | `100 − penalty × max(0, asymmetry − tolerance)` | tolerance `0.3%`, penalty `12` per percent |
-| Jawline | linear from best angle (`100`) to worst angle (`0`) | best `90°`, worst `150°` |
-| Facial thirds | `100 − penalty × max(0, deviation − freeBand)` | free band `0.12`, penalty `130` |
-| Overall | weighted mean | symmetry `0.38`, jawline `0.34`, thirds `0.28` |
+| Symmetry | `100 − penalty × max(0, residual − tolerance)` | tolerance `0.6%`, penalty `12` per percent |
+| Chin angle | linear from best angle (`100`) to worst angle (`0`) | best `95°`, worst `150°` |
+| Facial thirds | `100 − penalty × max(0, deviation − freeBand)` | free band `0.16`, penalty `130` |
+| Combined | weighted mean, shown as agreement only | symmetry `0.38`, jawline `0.34`, thirds `0.28` |
 
 **These bands are heuristics, not clinical norms.** There is no peer-reviewed,
-universally accepted scale for "jawline angularity from a selfie", and the app
-never claims one. Landmarks `172`/`397` sit roughly halfway along the jawline, so
-a typical frontal adult face measures ~105–125°, which is why the best-angle
-reference is 90° rather than some textbook value. Recalibrate against photos you
-trust and the rest of the pipeline stays untouched.
+universally accepted scale for "symmetry from a selfie", and the app never claims
+one. Landmarks `172`/`397` sit part-way along the jaw contour, so a typical
+frontal adult face measures ~105–125°, which is why the best-angle reference is
+95° rather than a textbook value.
 
-Because the thirds score compares against a true `1 : 1 : 1` measured with the
-radix landmark, most faces land in the 40–60 range on that metric. That is
-expected, and the results screen explains it: compare your scans with each
-other, not with 100.
+There is **no potential score, no projection and no grade**. An earlier version
+added 8–15 points of hypothetical headroom and labelled the result
+"Excellent/Strong/Balanced"; both implied a rating the geometry cannot support.
+The combined number is now labelled agreement with the references, and the
+results screen says explicitly that it is not an attractiveness score.
 
 ## Advice generation
 
@@ -148,13 +149,17 @@ other, not with 100.
 template with the number pasted in — and labels every item with its evidence
 strength so weak claims never look as solid as strong ones:
 
-* **Strong** — body composition revealing the jawline, camera angle and posture.
-* **Moderate** — sleep position and chewing side for asymmetry, sodium/alcohol
-  puffiness, orthodontic options.
-* **Limited** — tongue posture ("mewing"): framed as better resting posture,
-  explicitly *not* as a way to remodel an adult mandible.
-* **Measurement factor** — things like head tilt, lens distance and hairline
-  placement that move the number without changing the face.
+* **Measurement factor** — head tilt, lens distance, hairline placement, chin
+  height and repeated scans: the things that actually move these numbers most.
+* **Moderate** — that asymmetry is common and stable, that proportions are
+  descriptive rather than a standard to meet, that surgery/fillers are clinical
+  decisions.
+* **Strong** — the one medical statement the app makes: a *new* one-sided facial
+  change with drooping, numbness or weakness needs prompt medical assessment.
+
+The advice contains no weight-loss or diet instructions, no target weights, no
+attractiveness claims and no promise that a habit changes bone. BMI is a separate
+tool and never feeds back into a facial measurement.
 
 When asymmetry is at or above `6%` the report adds a safety note: most asymmetry
 is normal, but a *new* one-sided change with drooping, numbness or weakness needs
@@ -171,9 +176,9 @@ lib/
     metrics.dart                  RawFaceMetrics value object
     facial_analysis_service.dart  the three measurements + validation
     calibration.dart              every threshold in one place
-    scoring_engine.dart           0-100 normalisation, grades, warnings
+    scoring_engine.dart           0-100 agreement values, warnings
     feedback_engine.dart          research-informed advice
-    report.dart                   scores + advice + share text
+    report.dart                   agreement values + notes + share text
   ml/
     face_mesh_source.dart         FaceMeshReading + detector interface
     face_mesh_reader.dart         ML Kit adapter, coordinate normalisation
@@ -187,8 +192,8 @@ lib/
     widgets/
       face_guide_painter.dart     camera silhouette overlay
       scanning_painter.dart       canvas mesh + sweep animation
-      score_ring.dart             animated score ring
-      metric_card.dart            score bar + advice tiles
+      score_ring.dart             animated agreement ring
+      metric_card.dart            agreement bar + notes
 ```
 
 ## Tests
@@ -199,21 +204,26 @@ flutter test
 
 The suite covers:
 
-* each measurement against hand-computed geometry (angles, percentages, thirds),
-* scale invariance (same face, 137× larger, identical scores),
-* pose guards (turned head, tilted head),
+* each measurement against hand-computed geometry (midline residuals, angles,
+  thirds with the subnasale boundary),
+* scale invariance (same face, 137× larger, identical values),
+* pose guards (turned head, tilted head) and the new plausibility gates
+  (distorted width ratio, inverted vertical order),
 * validation failures (short mesh, degenerate mesh) and tolerance of extra iris
   landmarks (`468`–`478`),
-* score clamping, weighting, grade bands and the safety-note threshold,
+* agreement clamping, weighting, band labels and the safety-note threshold,
+* removal of the potential score and grades (the report has no such fields),
+* neutral comparison arithmetic (no winner, no "improved"/"declined" wording),
+* BMI maths, imperial conversion, validation, under-18 safeguards and the
+  absence of any BMI input in the face flow,
+* scan-history compatibility: an old file keeps every scan, drops body fields,
+  and new scans carry no `profile`, `age`, `bmi` or `height` keys,
 * the full controller pipeline and the rendered results dashboard, using a fake
   detector.
 
 `flutter analyze` runs clean with `strict-casts`, `strict-raw-types` and
-dead-code/unused-import treated as errors. In this repository: 24 tests pass,
-analysis reports no issues, on Flutter 3.47.9 / Dart 3.13.7. The Android APK is
-not built here (the build environment has no Android SDK), so the first
-`flutter run` on a real phone is still yours to do — the camera path and the
-native ML Kit call are the parts that only a device can confirm.
+dead-code/unused-import treated as errors. In this repository the suite is 135
+tests and analysis reports no issues, on Flutter 3.47.9 / Dart 3.13.7.
 
 ## Known limitations
 
@@ -231,11 +241,19 @@ native ML Kit call are the parts that only a device can confirm.
 
 ## Privacy
 
-Everything is computed on the device. Photos live in the app's cache directory
-because the camera plugin writes them there; the app never deletes them, so clear
-the app cache if you want them gone. `AnalysisReport.toShareText()` copies a text
-summary to the clipboard only when you tap **Copy** — the photo is never shared
-by the app itself.
+Everything is computed on the device; the app has no `INTERNET` permission in its
+release manifest. Photos are prepared into a private temporary directory, and the
+app now cleans up after itself:
+
+* deleting a saved scan deletes its prepared photo (once no other scan uses it),
+* clearing history deletes every prepared photo,
+* on load, prepared squares that no saved scan references are swept,
+* the picker/camera copy is deleted once the prepared square exists, so one scan
+  leaves one file rather than two.
+
+`AnalysisReport.toShareText()` copies a text summary to the clipboard only when
+you tap **Copy**; the photo is never shared by the app itself. The `.umax` export
+contains measurements and capture notes, no image.
 
 ## License and building on this
 
@@ -279,21 +297,28 @@ Every push to `main` also builds the APK on GitHub's runners
 (`.github/workflows/build-apk.yml`) and attaches it to the run as a downloadable
 artifact, so a build is possible without a local Android toolchain.
 
-## The four modules
+## The modules
 
-* **Face Analyze** — camera → 468-landmark mesh → three scored measurements.
-* **Compare My Progress** — every finished scan is stored on the device (a JSON
-  file in the app's private support directory); any two are compared metric by
-  metric, oldest against newest by default.
-* **Friend VS Mode** — the same comparison arithmetic, framed as two people with
-  a one-line verdict. One implementation serves both, so progress and versus can
-  never disagree about a score.
-* **Looksmaxing Wiki & Saved Reports** — eight evidence-graded notes on what a 2D
-  photo can and cannot tell you, plus every saved scan with per-entry delete.
+* **Face Analyze** — camera → 468-landmark mesh → three geometric measurements.
+* **BMI Calculator** — an independent tool with metric/imperial input, the correct
+  formula, validation, adult bands only for adults, and no connection to facial
+  analysis. It saves nothing and gives no targets or diet plan.
+* **Compare My Progress** — every finished scan is stored on the device; any two
+  are compared measurement by measurement, oldest against newest by default.
+* **Compare Reports** — the same neutral arithmetic for two reports, with no
+  winner and no ranking. Differences inside the noise band are shown as even.
+* **Looksmaxing Wiki & Saved Reports** — evidence-graded notes on what a 2D photo
+  can and cannot tell you, plus every saved scan with per-entry delete.
+* **Error Logs** — on-device crash log, copy/share/clear, never leaves the phone.
+
+**Multi-Angle Profile Scan is unavailable in this build.** Measuring a profile
+angle needs a side-view landmark model; the bundled detector is frontal only, so
+the old screen could only ever print "No reading". The entry point now says so
+instead of pretending, and the dead three-photo flow was removed.
 
 ## Failure handling
 
-Detection has an 8-second deadline at two levels — around ML Kit itself in
+Detection has a 30-second deadline at two levels — around ML Kit itself in
 `FaceMeshReader` and around the whole read in `AnalysisController` — so a wedged
 platform channel lands on the readable error panel instead of a scanning
 animation that never stops. Zero landmarks, a platform exception and a timeout

@@ -1,7 +1,7 @@
 /// A synthetic 468-point MediaPipe mesh for tests.
 ///
-/// Only the eleven landmarks the analysis reads carry meaningful positions; the
-/// rest sit at the origin, exactly like a real mesh for a face that is perfectly
+/// Only the landmarks the analysis reads carry meaningful positions; the rest
+/// sit at the origin, exactly like a real mesh for a face that is perfectly
 /// symmetric and perfectly flat. The default geometry is a plausible frontal
 /// face in arbitrary units (roughly millimetres), and every value can be
 /// overridden so a test can isolate one measurement.
@@ -16,16 +16,23 @@ abstract final class TestLandmarks {
   static const int glabella = 9;
   static const int foreheadTop = 10;
   static const int leftEye = 33;
+  static const int mouthLeft = 61;
+  static const int noseWingLeft = 94;
+  static const int leftEyeInner = 133;
   static const int chin = 152;
+  static const int nasion = 168;
   static const int jawLeft = 172;
+  static const int noseWingRight = 195;
   static const int faceLeft = 234;
   static const int rightEye = 263;
+  static const int mouthRight = 291;
+  static const int rightEyeInner = 362;
   static const int jawRight = 397;
   static const int faceRight = 454;
 }
 
-/// Defaults describe a symmetric face: eye corners equidistant from the nose
-/// bridge, jaw edges level, thirds split 30 / 15 / 75 across a 120-unit face.
+/// Defaults describe a symmetric face: every mirrored pair equidistant from the
+/// midline, jaw edges level, thirds split 30 / 15 / 75 across a 120-unit face.
 List<Vec2> syntheticFace({
   Vec2 foreheadTop = const Vec2(0, 0),
   Vec2 glabella = const Vec2(0, 30),
@@ -34,6 +41,10 @@ List<Vec2> syntheticFace({
   Vec2 chin = const Vec2(0, 120),
   Vec2 leftEye = const Vec2(-25, 25),
   Vec2 rightEye = const Vec2(25, 25),
+  Vec2 leftEyeInner = const Vec2(-8, 25),
+  Vec2 rightEyeInner = const Vec2(8, 25),
+  Vec2 mouthLeft = const Vec2(-12, 70),
+  Vec2 mouthRight = const Vec2(12, 70),
   Vec2 jawLeft = const Vec2(-40, 100),
   Vec2 jawRight = const Vec2(40, 100),
   Vec2 faceLeft = const Vec2(-50, 40),
@@ -47,15 +58,25 @@ List<Vec2> syntheticFace({
   );
   points[TestLandmarks.noseBridge] = noseBridge;
   points[TestLandmarks.noseBase] = noseBase;
+  points[TestLandmarks.nasion] = noseBridge;
   points[TestLandmarks.glabella] = glabella;
   points[TestLandmarks.foreheadTop] = foreheadTop;
   points[TestLandmarks.leftEye] = leftEye;
   points[TestLandmarks.rightEye] = rightEye;
+  points[TestLandmarks.leftEyeInner] = leftEyeInner;
+  points[TestLandmarks.rightEyeInner] = rightEyeInner;
+  points[TestLandmarks.mouthLeft] = mouthLeft;
+  points[TestLandmarks.mouthRight] = mouthRight;
   points[TestLandmarks.chin] = chin;
   points[TestLandmarks.jawLeft] = jawLeft;
   points[TestLandmarks.jawRight] = jawRight;
   points[TestLandmarks.faceLeft] = faceLeft;
   points[TestLandmarks.faceRight] = faceRight;
+  // The subnasale is the midpoint of the two nostril wings, so placing both
+  // wings symmetrically around the requested nose base keeps that boundary
+  // exactly where a test asks for it.
+  points[TestLandmarks.noseWingLeft] = Vec2(noseBase.x - 8, noseBase.y);
+  points[TestLandmarks.noseWingRight] = Vec2(noseBase.x + 8, noseBase.y);
   return points;
 }
 

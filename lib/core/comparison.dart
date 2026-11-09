@@ -1,12 +1,13 @@
 import '../data/scan_history.dart';
 import 'report.dart';
 
-/// One measurement in the form a comparison needs: the score, the printed raw
-/// value, and — when the scan recorded it — the raw number behind that value.
+/// One measurement in the form a comparison needs: the agreement value, the
+/// printed raw value, and — when the scan recorded it — the raw number behind
+/// that value.
 ///
-/// The raw number is what makes a sentence like "optimized by 4°" possible.
-/// Scans saved before the number was recorded simply carry null and fall back to
-/// score-only wording.
+/// The raw number is what makes a sentence like "0.4% lower" possible. Scans
+/// saved before the number was recorded simply carry null and fall back to
+/// value-only wording.
 class ComparisonMetric {
   const ComparisonMetric({
     required this.id,
@@ -20,7 +21,8 @@ class ComparisonMetric {
   final MetricId id;
   final String title;
 
-  /// 0-100, the same scale the dashboard shows.
+  /// 0-100 agreement with the stated reference, the same value the dashboard
+  /// shows. Not an attractiveness score.
   final double score;
 
   /// The formatted raw value, e.g. `1.8%` or `112°`.
@@ -40,7 +42,7 @@ class ComparisonMetric {
 }
 
 /// One side of a comparison: a saved scan, a freshly measured photo, or an
-/// imported friend's report.
+/// imported report.
 ///
 /// Both modules speak this type so the arithmetic and the rendering never need
 /// to know where the numbers came from.
@@ -50,18 +52,16 @@ class ComparisonEntry {
     required this.createdAt,
     required this.overallScore,
     required this.metrics,
-    this.potentialScore,
     this.id,
     this.isImported = false,
     this.warnings = const <String>[],
   });
 
-  /// What the card calls this side: `Before`, `Friend`, the imported title.
+  /// What the card calls this side: `Earlier`, `Later`, the imported title.
   final String label;
 
   final DateTime createdAt;
   final double overallScore;
-  final double? potentialScore;
   final List<ComparisonMetric> metrics;
 
   /// History id when this entry came from the archive; null for a photo that was
@@ -81,7 +81,6 @@ class ComparisonEntry {
       label: scan.displayTitle,
       createdAt: scan.createdAt,
       overallScore: scan.overallScore,
-      potentialScore: scan.potentialScore,
       id: scan.id,
       isImported: scan.isFriend,
       warnings: scan.warnings,
@@ -107,7 +106,6 @@ class ComparisonEntry {
       label: label,
       createdAt: report.createdAt,
       overallScore: report.overallScore,
-      potentialScore: report.potentialScore,
       warnings: report.qualityWarnings,
       metrics: <ComparisonMetric>[
         for (final MetricResult metric in report.metrics)
@@ -140,6 +138,11 @@ class ComparisonEntry {
 }
 
 /// The change in one measurement between the two sides.
+///
+/// Deliberately arithmetic only. There is no "better" side: a larger number
+/// means closer agreement with a reference band, which is a property of the
+/// measurement, not a ranking of the person. For a comparison between two
+/// people the direction is reported and nothing more.
 class MetricDelta {
   const MetricDelta({required this.before, required this.after});
 
@@ -149,11 +152,10 @@ class MetricDelta {
   MetricId get id => before.id;
   String get title => before.title;
 
-  /// Score points gained. Positive means the second side scores higher.
+  /// Agreement points on the second side minus the first.
   double get points => after.score - before.score;
 
-  /// Percentage change relative to the first side, which is what the comparison
-  /// matrix prints (`+3.2%`).
+  /// Percentage change relative to the first side.
   double get percentChange =>
       before.score <= 0 ? 0 : points / before.score * 100;
 
@@ -161,9 +163,9 @@ class MetricDelta {
   /// a real change.
   static const double flatThreshold = 0.5;
 
-  bool get isImprovement => points >= flatThreshold;
-  bool get isDecline => points <= -flatThreshold;
-  bool get isFlat => !isImprovement && !isDecline;
+  bool get isHigher => points >= flatThreshold;
+  bool get isLower => points <= -flatThreshold;
+  bool get isFlat => !isHigher && !isLower;
 
   /// `+3.2%`, `−1.4%`, `0.0%`.
   String get percentText {
@@ -174,7 +176,7 @@ class MetricDelta {
     return '$sign${percentChange.abs().toStringAsFixed(1)}%';
   }
 
-  /// `+3`, `−2`, `0` — score points, for the leaderboard column.
+  /// `+3`, `−2`, `0` — agreement points, for the difference column.
   String get pointsText {
     if (isFlat) {
       return '0';
@@ -206,22 +208,12 @@ class MetricDelta {
         MetricId.facialThirds => 'proportions unchanged',
       };
     }
-    return switch (id) {
-      MetricId.eyeSymmetry =>
-        change < 0
-            ? 'more even by ${change.abs().toStringAsFixed(1)}%'
-            : 'less even by ${change.abs().toStringAsFixed(1)}%',
-      MetricId.jawline =>
-        change < 0
-            ? 'optimized by ${change.abs().toStringAsFixed(0)}\u00B0'
-            : 'widened by ${change.abs().toStringAsFixed(0)}\u00B0',
-      MetricId.facialThirds =>
-        change < 0
-            ? 'closer to a 1:1:1 split by '
-                  '${change.abs().toStringAsFixed(2)}'
-            : 'further from a 1:1:1 split by '
-                  '${change.abs().toStringAsFixed(2)}',
+    final String amount = switch (id) {
+      MetricId.eyeSymmetry => '${change.abs().toStringAsFixed(1)}%',
+      MetricId.jawline => '${change.abs().toStringAsFixed(0)}\u00B0',
+      MetricId.facialThirds => change.abs().toStringAsFixed(2),
     };
+    return change > 0 ? '$amount higher' : '$amount lower';
   }
 }
 
@@ -254,27 +246,25 @@ class ComparisonResult {
 
   bool get overallFlat => overallDelta.abs() < 1.5;
 
-  /// Metrics where the second side scores higher. For a versus screen this is
-  /// literally "who won the category".
-  int get winsAfter => deltas.where((MetricDelta d) => d.isImprovement).length;
+  /// Measurements that moved up, down, or stayed inside the noise band.
+  int get higherCount => deltas.where((MetricDelta d) => d.isHigher).length;
 
-  int get winsBefore => deltas.where((MetricDelta d) => d.isDecline).length;
+  int get lowerCount => deltas.where((MetricDelta d) => d.isLower).length;
 
-  int get ties => deltas.where((MetricDelta d) => d.isFlat).length;
+  int get unchangedCount => deltas.where((MetricDelta d) => d.isFlat).length;
 
-  /// Highest-scoring side by categories won, or null for a draw.
-  ComparisonEntry? get leader {
-    if (winsAfter == winsBefore) {
-      return null;
-    }
-    return winsAfter > winsBefore ? after : before;
-  }
+  /// True when every measurement is inside the noise band, i.e. the two sides
+  /// cannot be told apart by this app.
+  bool get allWithinNoise => deltas.every((MetricDelta d) => d.isFlat);
 
-  /// Categories ordered by who gained the most, which is how a leaderboard
-  /// reads.
-  List<MetricDelta> get leaderboard {
+  /// Measurements ordered by the size of the change, largest first. Used for
+  /// the detail list, not to rank people.
+  List<MetricDelta> get byChange {
     final List<MetricDelta> ordered = List<MetricDelta>.of(deltas)
-      ..sort((MetricDelta a, MetricDelta b) => b.points.compareTo(a.points));
+      ..sort(
+        (MetricDelta a, MetricDelta b) =>
+            b.points.abs().compareTo(a.points.abs()),
+      );
     return ordered;
   }
 
@@ -292,17 +282,17 @@ class ComparisonResult {
   bool get hasCaptureNotes =>
       before.warnings.isNotEmpty || after.warnings.isNotEmpty;
 
-  /// The single measurement with the largest swing, when it clears the noise
+  /// The single measurement with the largest change, when it clears the noise
   /// threshold.
   MetricDelta? get biggestSwing {
     if (deltas.isEmpty) {
       return null;
     }
-    final List<MetricDelta> ordered = leaderboard;
-    return ordered.first.isFlat ? null : ordered.first;
+    final MetricDelta first = byChange.first;
+    return first.isFlat ? null : first;
   }
 
-  /// `+3.0%` style text for the overall score.
+  /// `+3.0%` style text for the combined value.
   String get overallPercentText {
     if (overallFlat) {
       return '0.0%';

@@ -1,14 +1,11 @@
-import 'dart:math' as math;
-
 import 'calibration.dart';
 import 'feedback_engine.dart';
 import 'metrics.dart';
 import 'report.dart';
-import 'user_profile.dart';
 
 /// Thrown when the measurements handed to the scoring engine are not finite or
 /// a denominator is effectively zero. Carries a message that is safe to show
-/// directly in the UI; it always beats a NaN score reaching the screen.
+/// directly in the UI; it always beats a NaN reaching the screen.
 class ScoringException implements Exception {
   const ScoringException(this.message);
 
@@ -18,35 +15,23 @@ class ScoringException implements Exception {
   String toString() => 'ScoringException: $message';
 }
 
-/// Normalises [RawFaceMetrics] into 0-100 scores and attaches feedback.
+/// Converts [RawFaceMetrics] into 0-100 agreement values and attaches neutral
+/// notes.
 ///
-/// Score definitions (all clamped to `[0, 100]`):
+/// Agreement is always "distance from a stated reference", never a rating of a
+/// person:
 ///
-/// * **Eye symmetry** — `100 - penalty * max(0, asymmetry - tolerance)`.
-///   Mirrored faces score 100; the penalty is linear in the percentage
-///   difference so the number stays readable across the whole range.
-/// * **Jawline angularity** — linear from
-///   [AnalysisCalibration.jawAngleBestDegrees] (100 points) down to
-///   [AnalysisCalibration.jawAngleWorstDegrees] (0 points). A smaller chin angle
-///   means the jaw edges converge more sharply, which is the geometry people
-///   read as a tapered, angular jaw.
-/// * **Facial thirds** — `100 - penalty * max(0, deviation - freeBand)`, where
-///   deviation is the total absolute distance from a 1 : 1 : 1 split.
+/// * **Symmetry** — `100 - penalty * max(0, residual - tolerance)`, where the
+///   residual is the mean mirrored-pair distance from the face's own midline.
+/// * **Chin angle** — linear from [AnalysisCalibration.jawAngleBestDegrees]
+///   (100) down to [AnalysisCalibration.jawAngleWorstDegrees] (0).
+/// * **Facial thirds** — `100 - penalty * max(0, deviation - freeBand)`
+///   against an even 1 : 1 : 1 split.
 ///
-/// Two numbers come out of those three scores:
-///
-/// * **Overall** is the weighted mean. It is deliberately strict: it is what the
-///   landmark coordinates say, with no allowance for a bad photo or a bad day.
-/// * **Potential** is the projection. It takes the two weakest measurements,
-///   measures the headroom those have between them, and adds a bonus of
-///   [AnalysisCalibration.potentialMinGain] to
-///   [AnalysisCalibration.potentialMaxGain] points accordingly. The weakest
-///   measurement is weighted by [AnalysisCalibration.potentialPrimaryWeight] so
-///   one noisy score cannot own the whole projection. Capped at 100, because
-///   that is where the scale ends.
-///
-/// Weights, bands, penalties and the projection range all live in
-/// [AnalysisCalibration]; nothing is hard-coded here.
+/// The combined value is the weighted mean of those three. It is deliberately
+/// not called a score or a rating: there is no projection, no "potential", no
+/// grade and no claim that a higher number is a better-looking face. Two photos
+/// of the same face differ by more than most of these bands.
 class ScoringEngine {
   const ScoringEngine({
     this.calibration = const AnalysisCalibration(),
@@ -60,7 +45,6 @@ class ScoringEngine {
     RawFaceMetrics metrics, {
     String? imagePath,
     DateTime? createdAt,
-    UserProfile? profile,
   }) {
     _requireFinite(metrics);
 
@@ -87,25 +71,22 @@ class ScoringEngine {
         rawValue: '${metrics.eyeAsymmetryPercent.toStringAsFixed(1)}%',
         score: symmetryScore,
         summary:
-            'Distance from each outer eye corner to the nose-bridge '
-            'midline, compared side to side. Lower is more mirrored.',
+            'How far four mirrored landmark pairs (eye corners, mouth '
+            'corners, cheek edges) sit from the face\'s own midline, averaged '
+            'and scaled to the distance between the eyes.',
         advice: feedback.forEyeSymmetry(metrics, symmetryScore),
       ),
       MetricResult(
         id: MetricId.jawline,
-        title: 'Jawline angularity',
-        measurementLabel: 'Chin angle',
+        title: 'Chin angle',
+        measurementLabel: 'Angle at the chin',
         rawValue: '${metrics.jawAngleDegrees.toStringAsFixed(0)}\u00B0',
         score: jawScore,
         summary:
-            'The angle the two jaw edges make at the chin. A sharper '
-            'convergence reads as a more tapered, angular lower face.',
-        advice: feedback.forJawline(
-          metrics,
-          jawScore,
-          bmi: profile?.bmi,
-          bmiCategory: profile?.bmiCategory.$2,
-        ),
+            'The angle the two jaw-contour landmarks make at the chin. It is a '
+            'frontal measurement of the lower-face contour, not a clinical '
+            'gonial angle, which needs a side view.',
+        advice: feedback.forJawline(metrics, jawScore),
       ),
       MetricResult(
         id: MetricId.facialThirds,
@@ -116,27 +97,14 @@ class ScoringEngine {
             '${metrics.lowerToMiddleRatio.toStringAsFixed(2)}',
         score: thirdsScore,
         summary:
-            'Forehead, midface and lower face as shares of total face '
-            'height, compared with a 1 : 1 : 1 split.',
+            'Hairline-to-brow, brow-to-nose-base and nose-base-to-chin as '
+            'shares of face height, compared with an even 1 : 1 : 1 split.',
         advice: feedback.forFacialThirds(metrics, thirdsScore),
       ),
     ];
 
-    final double gain = _projectionGain(<double>[
-      symmetryScore,
-      jawScore,
-      thirdsScore,
-    ]);
-    final double potential = math.min(100.0, overall + gain);
-
-    final (String grade, String blurb) = _grade(overall);
-
     return AnalysisReport(
       overallScore: overall,
-      potentialScore: potential,
-      potentialGain: potential - overall,
-      grade: grade,
-      gradeBlurb: blurb,
       metrics: results,
       coreWeakness: feedback.coreWeakness(results),
       raw: metrics,
@@ -144,13 +112,12 @@ class ScoringEngine {
       safetyNote: _safetyNote(metrics),
       createdAt: createdAt ?? DateTime.now(),
       imagePath: imagePath,
-      profile: profile,
     );
   }
 
-  /// Rejects NaN/Infinity before a single score is computed. A collapsed mesh
-  /// that slipped past the geometry guards would otherwise produce NaN scores,
-  /// which the UI would render as a blank or frozen results screen.
+  /// Rejects NaN/Infinity before a single value is computed. A collapsed mesh
+  /// that slipped past the geometry guards would otherwise produce NaN, which
+  /// the UI would render as a blank or frozen results screen.
   void _requireFinite(RawFaceMetrics metrics) {
     final List<double> values = <double>[
       metrics.eyeAsymmetryPercent,
@@ -173,30 +140,7 @@ class ScoringEngine {
     }
   }
 
-  /// The projection bonus, in score points.
-  ///
-  /// The two lowest scores are blended (weakest first), inverted into a
-  /// severity, and mapped onto the calibrated bonus range. A face whose weakest
-  /// measurement is near 0 gets the full bonus; one whose measurement is already
-  /// strong gets the minimum, because there is very little left to project.
-  double _projectionGain(List<double> scores) {
-    if (scores.isEmpty) {
-      return 0;
-    }
-    final List<double> ordered = List<double>.of(scores)
-      ..sort((double a, double b) => a.compareTo(b));
-    final double weakest = ordered.first;
-    final double blended = ordered.length == 1
-        ? weakest
-        : weakest * calibration.potentialPrimaryWeight +
-              ordered[1] * (1 - calibration.potentialPrimaryWeight);
-    final double severity = ((100 - blended) / 100).clamp(0.0, 1.0);
-    return calibration.potentialMinGain +
-        (calibration.potentialMaxGain - calibration.potentialMinGain) *
-            severity;
-  }
-
-  /// Mirrored faces lose nothing; every percentage point of difference past the
+  /// Mirrored faces lose nothing; every percentage point of residual past the
   /// noise tolerance costs [AnalysisCalibration.symmetryPenaltyPerPercent].
   double _symmetryScore(RawFaceMetrics metrics) {
     final double excess =
@@ -223,7 +167,7 @@ class ScoringEngine {
     return (t * 100).clamp(0.0, 100.0);
   }
 
-  /// Full marks inside the free band, linear penalty past it.
+  /// Full agreement inside the free band, linear penalty past it.
   double _thirdsScore(RawFaceMetrics metrics) {
     final double excess =
         metrics.thirdsDeviation - calibration.thirdsFreeDeviation;
@@ -236,46 +180,27 @@ class ScoringEngine {
     );
   }
 
-  (String, String) _grade(double overall) {
-    if (overall >= 85) {
-      return (
-        'Excellent',
-        'Every category is sitting inside its reference band. There is nothing '
-            'structural left for a photo to tell you.',
-      );
-    }
-    if (overall >= 72) {
-      return (
-        'Strong',
-        'Most of the geometry is close to its reference band, with one area '
-            'carrying most of the deviation.',
-      );
-    }
-    if (overall >= 58) {
-      return (
-        'Balanced',
-        'A normal, mixed result. The scores below show which measurement is '
-            'pulling the total down, and what actually moves it.',
-      );
-    }
-    if (overall >= 42) {
-      return (
-        'Room to grow',
-        'Two or more categories sit outside their bands. The advice is ordered '
-            'by what has the most leverage, starting with how the photo was '
-            'taken.',
-      );
-    }
-    return (
-      'Focus area',
-      'Several measurements are far from their reference bands. Check the '
-          'capture conditions first: a turned or tilted head can produce this '
-          'result on a perfectly normal face.',
-    );
-  }
-
+  /// Conditions under which the numbers should not be trusted, in the order a
+  /// user can act on them.
   List<String> _qualityWarnings(RawFaceMetrics metrics) {
     final List<String> warnings = <String>[];
+    if (metrics.landmarkCount != calibration.landmarkCount) {
+      warnings.add(
+        'The detector returned ${metrics.landmarkCount} landmarks instead of '
+        '${calibration.landmarkCount}. The measurement still ran, but a partial '
+        'mesh is less reliable. Retake the photo with the whole face in frame.',
+      );
+    }
+    final double spreadRatio = metrics.meshSpread / metrics.interocularDistance;
+    if (spreadRatio.isFinite &&
+        (spreadRatio < calibration.minMeshSpreadRatio ||
+            spreadRatio > calibration.maxMeshSpreadRatio)) {
+      warnings.add(
+        'Face proportions look distorted in this mesh (height/eye span '
+        '${spreadRatio.toStringAsFixed(2)}). This usually means the photo was '
+        'taken at a steep angle or part of the face was covered.',
+      );
+    }
     if (metrics.yawIndex < calibration.frontalYawThreshold) {
       warnings.add(
         'Your head was turned during the scan (frontal index '
@@ -299,10 +224,10 @@ class ScoringEngine {
       return null;
     }
     return 'This reading is ${metrics.eyeAsymmetryPercent.toStringAsFixed(1)}% '
-        'asymmetric, which is higher than the range this app expects from '
+        'from mirrored, which is higher than the range this app expects from '
         'capture noise. Most people are mildly asymmetric and it is nothing to '
-        'worry about. But if the difference appeared suddenly, or comes with '
-        'drooping, numbness, weakness or a change in how you speak, see a '
+        'worry about. But if a difference like this appeared suddenly, or comes '
+        'with drooping, numbness, weakness or a change in how you speak, see a '
         'doctor promptly \u2014 new one-sided facial change is a medical matter, '
         'not a cosmetic one.';
   }

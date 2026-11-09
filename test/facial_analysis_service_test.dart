@@ -25,10 +25,11 @@ void main() {
         syntheticFace(leftEye: const Vec2(-30, 25)),
       );
 
-      // d_left = sqrt(909) = 30.1496, d_right = sqrt(634) = 25.1794
-      // |diff| / mean * 100 = 17.966%
-      expect(metrics.eyeAsymmetryPercent, closeTo(17.966, 0.001));
-      expect(metrics.eyeDistanceRatio, closeTo(1.1974, 0.001));
+      // Only the outer-eye pair moved. Its residual is |30 - 25| / 55 * 100
+      // = 9.09% of the (now 55-unit) eye span, and the residual is the mean of
+      // four pairs, so the reported value is a quarter of that.
+      expect(metrics.eyeAsymmetryPercent, closeTo(2.2727, 0.001));
+      expect(metrics.eyeDistanceRatio, closeTo(1.2, 1e-9));
     });
 
     test('is scale invariant', () {
@@ -178,9 +179,7 @@ void main() {
     test('reads a mesh whose points are far below the minimum scale', () {
       // Everything collapsed onto one spot: also a divide-by-zero probe.
       expect(
-        () => service.measure(
-          List<Vec2>.filled(468, const Vec2(10, 10)),
-        ),
+        () => service.measure(List<Vec2>.filled(468, const Vec2(10, 10))),
         throwsA(isA<FacialAnalysisException>()),
       );
     });
@@ -194,22 +193,25 @@ void main() {
 
       expect(report.metrics, hasLength(3));
       expect(report.metric(MetricId.eyeSymmetry).score, closeTo(100, 1e-9));
-      expect(report.metric(MetricId.jawline).score, closeTo(38.5502, 0.001));
+      expect(report.metric(MetricId.jawline).score, closeTo(42.0547, 0.001));
       expect(
         report.metric(MetricId.facialThirds).score,
-        closeTo(39.7667, 0.001),
+        closeTo(44.9667, 0.001),
       );
-      expect(report.overallScore, closeTo(62.2418, 0.001));
-      expect(report.grade, 'Balanced');
+      expect(report.overallScore, closeTo(64.8893, 0.001));
+      expect(report.bandLabel, 'Mixed');
     });
 
     test('never leaves the 0-100 range', () {
       final AnalysisReport extreme = engine.build(
         service.measure(
           syntheticFace(
-            leftEye: const Vec2(-80, 25),
+            leftEye: const Vec2(-45, 25),
+            rightEye: const Vec2(45, 25),
             jawLeft: const Vec2(-90, 60),
             jawRight: const Vec2(90, 60),
+            faceLeft: const Vec2(-70, 40),
+            faceRight: const Vec2(70, 40),
             glabella: const Vec2(0, 2),
             noseBase: const Vec2(0, 100),
           ),
@@ -242,7 +244,14 @@ void main() {
         service.measure(syntheticFace()),
       );
       final AnalysisReport asymmetric = engine.build(
-        service.measure(syntheticFace(leftEye: const Vec2(-30, 25))),
+        service.measure(
+          syntheticFace(
+            leftEye: const Vec2(-75, 25),
+            rightEye: const Vec2(45, 25),
+            faceLeft: const Vec2(-120, 40),
+            faceRight: const Vec2(120, 40),
+          ),
+        ),
       );
 
       expect(symmetric.safetyNote, isNull);
@@ -296,9 +305,9 @@ void main() {
           .build(service.measure(syntheticFace()))
           .toShareText();
 
-      expect(text, contains('Overall:'));
+      expect(text, contains('Combined agreement:'));
       expect(text, contains('Eye symmetry:'));
-      expect(text, contains('Jawline angularity:'));
+      expect(text, contains('Chin angle:'));
       expect(text, contains('Facial thirds:'));
       expect(text, contains('468 MediaPipe Face Mesh'));
     });

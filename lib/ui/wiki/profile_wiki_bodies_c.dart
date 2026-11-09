@@ -28,30 +28,29 @@ Practical notes
 ''';
 
 String dietBody() => '''
-Dietary guidelines for facial definition are really the same as the general guidelines
-for a healthy body composition, because the face reflects the whole: fat, fluid, sleep
-and the capture conditions.
+Diet affects the face mostly through short-term fluid and through general health,
+and this app does not give diet advice. There are no calorie targets, no meal plans
+and no weight goals anywhere in it.
 
-What the evidence supports
-- Adequate protein supports preserving muscle and shape while in a deficit.
-- A sustainable calorie deficit is the route to lower body fat generally, including the
-  face for people who lose fat there.
-- Vegetables, fiber and steady meals support the same slow, sustainable pattern that
-  actually changes body composition.
-- Sodium and alcohol drive short-term fluid retention; a normal evening helps the next
-  morning's photo.
+What is reasonable to say
+- Sodium, alcohol and a short night can increase facial fluid retention for a day
+  or so, which changes how the jaw-neck border looks in a photo. That is
+  temporary and reverses.
+- General nutrition guidance for health is a conversation with a clinician or
+  dietitian, not something an appearance app should prescribe.
+- BMI is a rough screening measure, not a diagnosis and not a target. The separate
+  BMI Calculator shows the number and its limitations, and applies adult bands
+  only to adults.
 
-What it does not support
-- No specific food makes the jawline sharper directly.
-- Supplement "de-bloating" claims are mostly marketing; the honest fixes are the boring
-  ones above.
+What the evidence does not support
+- No specific food sharpens the jawline directly.
+- Supplement "de-bloating" claims are mostly marketing.
 
 Practical notes
-- Keep the boring habits boring and consistent: a modest deficit, enough protein,
-  resistance training, consistent sleep, steady sodium.
-- For the app, the dietary side shows up as a trend over weeks, not a single scan.
-- If the number moves a little after a better night and a lower-sodium evening, that is
-  fluid, not a structural change — and it is still useful as photo hygiene.
+- For a comparable photo, keep the evening before ordinary: normal sleep, normal
+  food, normal hydration.
+- If the number moves after a better night, that is fluid, not a structural
+  change.
 ''';
 
 String skinBody() => '''

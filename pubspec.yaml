@@ -4,7 +4,7 @@ description: >-
   runs on the device through ML Kit; every measurement and score is computed
   locally in Dart. No network calls, no accounts, no uploads.
 publish_to: "none"
-version: 1.2.2+5
+version: 1.3.0+6
 
 environment:
   sdk: ^3.9.0

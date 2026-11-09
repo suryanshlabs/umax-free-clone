@@ -48,8 +48,6 @@ class ResultsScreen extends StatelessWidget {
                   const SizedBox(height: 20),
                   _ScoreCard(report: report),
                   const SizedBox(height: 16),
-                  _PotentialCard(report: report),
-                  const SizedBox(height: 16),
                   _WeaknessRoadmap(report: report),
                   if (report.qualityWarnings.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 16),
@@ -115,7 +113,7 @@ class _ShareFileCard extends StatelessWidget {
     final String? title = await showDialog<String>(
       context: context,
       builder: (BuildContext context) =>
-          _NameReportDialog(initial: report.grade),
+          _NameReportDialog(initial: report.bandLabel),
     );
     if (title == null || !context.mounted) {
       return;
@@ -365,7 +363,7 @@ class _ScoreCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      report.grade,
+                      report.bandLabel,
                       style: TextStyle(
                         fontSize: 21,
                         fontWeight: FontWeight.w700,
@@ -375,7 +373,7 @@ class _ScoreCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      report.gradeBlurb,
+                      report.bandExplanation,
                       style: const TextStyle(
                         fontSize: 12.5,
                         height: 1.5,
@@ -564,10 +562,12 @@ class _DisclaimerCard extends StatelessWidget {
           SizedBox(height: 10),
           Text(
             'These are geometric measurements from one 2D photo, not a medical '
-            'device and not an attractiveness rating. Scores are mapped onto '
-            'reference bands defined in this app\u2019s calibration, so compare '
-            'your scans with each other rather than with the number 100. '
-            'Lighting, lens distortion and head angle all move the result.',
+            'device and not an attractiveness rating. Each value is agreement '
+            'with a reference band defined in this app\u2019s calibration, and '
+            'the combined number is only their weighted mean. There is no '
+            'potential score and no grade. Compare your scans with each other '
+            'rather than with 100: lighting, lens distortion and head angle all '
+            'move the result.',
             style: TextStyle(
               fontSize: 11.5,
               height: 1.6,
@@ -575,223 +575,6 @@ class _DisclaimerCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Measured baseline against the projection, side by side.
-///
-/// The strict number is the headline everywhere else; this card is the only
-/// place the projection appears, so it never masks what the geometry actually
-/// measured.
-class _PotentialCard extends StatelessWidget {
-  const _PotentialCard({required this.report});
-
-  final AnalysisReport report;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.outline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              const Text(
-                'PROJECTION',
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.8,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.mint.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Text(
-                  report.potentialGainText,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                    color: AppColors.mint,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              _ScoreColumn(
-                label: 'OVERALL',
-                value: report.overallText,
-                caption: 'measured',
-                color: scoreColor(report.overallScore),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(left: 16, right: 16, bottom: 14),
-                child: Icon(
-                  Icons.arrow_forward_rounded,
-                  size: 15,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-              _ScoreColumn(
-                label: 'POTENTIAL',
-                value: report.potentialText,
-                caption: 'projected',
-                color: scoreColor(report.potentialScore),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _PotentialBar(
-            overall: report.overallScore,
-            potential: report.potentialScore,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Overall is strict: it is what the landmarks say, with no allowance '
-            'for a bad photo or a bad day. Potential adds '
-            '${report.potentialGainText} points by assuming your two weakest '
-            'measurements move into the band your strongest already sits in. It '
-            'is a ceiling for the habits in the roadmap below, not a promise: '
-            'bone structure does not change, but body composition, fluid, '
-            'grooming, posture and the photo do.',
-            style: const TextStyle(
-              fontSize: 11.5,
-              height: 1.6,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ScoreColumn extends StatelessWidget {
-  const _ScoreColumn({
-    required this.label,
-    required this.value,
-    required this.caption,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final String caption;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.4,
-            color: AppColors.textTertiary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: <Widget>[
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 34,
-                height: 1,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -1.4,
-                color: color,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 3, left: 2),
-              child: Text(
-                '/100',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 5),
-        Text(
-          caption,
-          style: const TextStyle(fontSize: 10, color: AppColors.textTertiary),
-        ),
-      ],
-    );
-  }
-}
-
-/// A 100-point track split into measured, projected and remaining headroom.
-class _PotentialBar extends StatelessWidget {
-  const _PotentialBar({required this.overall, required this.potential});
-
-  final double overall;
-  final double potential;
-
-  @override
-  Widget build(BuildContext context) {
-    final int base = overall.clamp(0, 100).round();
-    final int gain = (potential - overall).clamp(0, 100 - base).round();
-    final int rest = (100 - base - gain).clamp(0, 100);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(99),
-      child: SizedBox(
-        height: 8,
-        child: Row(
-          children: <Widget>[
-            if (base > 0)
-              Expanded(
-                flex: base,
-                child: ColoredBox(color: scoreColor(overall)),
-              ),
-            if (gain > 0)
-              Expanded(
-                flex: gain,
-                child: const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: <Color>[AppColors.mint, AppColors.accentSoft],
-                    ),
-                  ),
-                  child: SizedBox.shrink(),
-                ),
-              ),
-            if (rest > 0)
-              Expanded(
-                flex: rest,
-                child: const ColoredBox(color: AppColors.surfaceHigh),
-              ),
-          ],
-        ),
       ),
     );
   }
@@ -837,7 +620,7 @@ class _WeaknessRoadmap extends StatelessWidget {
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: const Text(
-                  'CORE WEAKNESS AREA',
+                  'LOWEST AGREEMENT',
                   style: TextStyle(
                     fontSize: 8.5,
                     fontWeight: FontWeight.w700,

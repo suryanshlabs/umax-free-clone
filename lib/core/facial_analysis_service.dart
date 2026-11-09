@@ -6,7 +6,8 @@ import 'metrics.dart';
 import 'vector.dart';
 
 /// Thrown for anything the user can act on: no face, partial mesh, garbage
-/// coordinates. Carries a message that is safe to show directly in the UI.
+/// coordinates, an implausible pose. Carries a message that is safe to show
+/// directly in the UI.
 class FacialAnalysisException implements Exception {
   const FacialAnalysisException(this.message);
 
@@ -17,16 +18,16 @@ class FacialAnalysisException implements Exception {
 }
 
 /// Turns 468 MediaPipe face-mesh landmarks into the three measurements the app
-/// scores: eye symmetry, jawline angularity and facial thirds.
+/// reports: symmetry residual, chin angle and facial thirds.
 ///
 /// The class is intentionally pure: no Flutter imports, no I/O, no async. Given
 /// the same points it always returns the same numbers, which is what makes the
 /// maths unit-testable. All points must already be in one uniform coordinate
 /// space (see [Vec2]); [FaceMeshReader] handles that conversion.
 ///
-/// Complexity is O(1) with respect to landmark count — exactly 11 landmark
-/// lookups and a handful of square roots — so it is safe to call at camera
-/// frame rate if you later move from still capture to live analysis.
+/// Every landmark index used here is documented in [FaceLandmarks] against the
+/// canonical MediaPipe topology. The pipeline is O(1): a fixed set of landmark
+/// lookups and a handful of square roots.
 class FacialAnalysisService {
   const FacialAnalysisService({this.calibration = const AnalysisCalibration()});
 
@@ -34,15 +35,16 @@ class FacialAnalysisService {
 
   /// Smallest denominator worth dividing by. Every ratio below is measured in
   /// fractions of the image height, so a real face part is tens of times this
-  /// large — anything at or below it is a collapsed mesh, not a measurement,
-  /// and dividing by it would produce Infinity or NaN scores downstream.
+  /// large — anything at or below it is a collapsed mesh, not a measurement.
   static const double minScale = 0.001;
 
   /// Measures [points] and returns the raw geometry.
   ///
   /// Throws [FacialAnalysisException] when the mesh is incomplete, contains
-  /// non-finite values, or is degenerate (a zero-length reference distance),
-  /// because every downstream score would be meaningless.
+  /// non-finite values, is degenerate (zero-length reference distance), is
+  /// vertically impossible (upside-down or collapsed), or has a face-width to
+  /// eye-span ratio no real face produces — all cases where a score would be
+  /// meaningless or misleading.
   RawFaceMetrics measure(List<Vec2> points) {
     if (points.length < calibration.landmarkCount) {
       throw FacialAnalysisException(
@@ -51,19 +53,23 @@ class FacialAnalysisService {
       );
     }
 
-    final Vec2 noseBridge = _point(points, FaceLandmarks.noseBridge);
-    final Vec2 leftEye = _point(points, FaceLandmarks.leftEyeCorner);
-    final Vec2 rightEye = _point(points, FaceLandmarks.rightEyeCorner);
+    final Vec2 nasion = _point(points, FaceLandmarks.nasion);
+    final Vec2 glabella = _point(points, FaceLandmarks.glabella);
+    final Vec2 foreheadTop = _point(points, FaceLandmarks.foreheadTop);
     final Vec2 chin = _point(points, FaceLandmarks.chin);
+    final Vec2 leftEyeOuter = _point(points, FaceLandmarks.leftEyeOuter);
+    final Vec2 rightEyeOuter = _point(points, FaceLandmarks.rightEyeOuter);
     final Vec2 jawLeft = _point(points, FaceLandmarks.jawEdgeLeft);
     final Vec2 jawRight = _point(points, FaceLandmarks.jawEdgeRight);
-    final Vec2 foreheadTop = _point(points, FaceLandmarks.foreheadTop);
-    final Vec2 glabella = _point(points, FaceLandmarks.glabella);
-    final Vec2 noseBase = _point(points, FaceLandmarks.noseBase);
     final Vec2 faceLeft = _point(points, FaceLandmarks.faceEdgeLeft);
     final Vec2 faceRight = _point(points, FaceLandmarks.faceEdgeRight);
+    final Vec2 subnasale = _midpoint(
+      _point(points, FaceLandmarks.noseWingLeft),
+      _point(points, FaceLandmarks.noseWingRight),
+    );
 
-    final double interocular = leftEye.distanceTo(rightEye);
+    // ---- Scale and plausibility ------------------------------------------
+    final double interocular = leftEyeOuter.distanceTo(rightEyeOuter);
     if (interocular <= minScale || !interocular.isFinite) {
       throw const FacialAnalysisException(
         'The two eye corners are on top of each other, so the mesh cannot be '
@@ -71,31 +77,70 @@ class FacialAnalysisService {
       );
     }
 
-    // ---- 1. Eye symmetry -------------------------------------------------
-    // Distance from the nose-bridge midline anchor to each outer eye corner.
-    // Using the midline point rather than the eye-to-eye span means a face that
-    // sits perfectly straight but has one eye slightly further from the centre
-    // still registers, which is the asymmetry that is actually visible.
-    final double dLeft = noseBridge.distanceTo(leftEye);
-    final double dRight = noseBridge.distanceTo(rightEye);
-    final double meanEyeDistance = (dLeft + dRight) / 2;
-    final double eyeAsymmetryPercent = meanEyeDistance <= minScale
-        ? 0.0
-        : ((dLeft - dRight).abs() / meanEyeDistance) * 100;
+    final double faceWidth = faceLeft.distanceTo(faceRight);
+    final double widthRatio = faceWidth / interocular;
+    if (!widthRatio.isFinite ||
+        widthRatio < calibration.minFaceWidthRatio ||
+        widthRatio > calibration.maxFaceWidthRatio) {
+      throw const FacialAnalysisException(
+        'The face mesh came back distorted (the cheek edges are the wrong '
+        'distance apart relative to the eyes). This is usually a partly '
+        'occluded face or a photo taken at a steep angle. Retake it straight on.',
+      );
+    }
 
-    // ---- 2. Jawline angularity -------------------------------------------
-    // Angle at the chin between the two jaw edges (law of cosines via
-    // acos(dot / |a||b|)). Symmetric under mirroring, so it does not matter
-    // which jaw edge is "left" on screen.
+    // A real face has the hairline above the brow, the brow above the nose base
+    // and the nose base above the chin. If those are inverted the mesh is
+    // upside down (or the detector locked onto something that is not a face).
+    final double faceHeight = nasion.distanceTo(chin);
+    final double verticalSlack = faceHeight * 0.02;
+    if (glabella.y > subnasale.y + verticalSlack ||
+        subnasale.y > chin.y + verticalSlack) {
+      throw const FacialAnalysisException(
+        'The landmarks are not in a face-like order (chin above the nose). '
+        'Retake the photo upright with your whole face in the guide.',
+      );
+    }
+
+    // ---- 1. Symmetry residual --------------------------------------------
+    // Perpendicular distance from each paired landmark to the midline through
+    // the nasion and chin. Averaging four pairs (outer eyes, inner eyes, mouth
+    // corners, cheek edges) is far less sensitive to one noisy landmark than
+    // the single nose-bridge-to-eye measure this replaced.
+    final Vec2 midlineDirection = chin - nasion;
+    final List<double> pairResiduals = <double>[];
+    double leftOuterDistance = 0;
+    double rightOuterDistance = 0;
+    for (final (int left, int right) in FaceLandmarks.symmetryPairs) {
+      final Vec2 leftPoint = _point(points, left);
+      final Vec2 rightPoint = _point(points, right);
+      final double dLeft = _perpendicularDistance(
+        leftPoint,
+        nasion,
+        midlineDirection,
+      );
+      final double dRight = _perpendicularDistance(
+        rightPoint,
+        nasion,
+        midlineDirection,
+      );
+      pairResiduals.add((dLeft - dRight).abs() / interocular * 100);
+      if (left == FaceLandmarks.leftEyeOuter) {
+        leftOuterDistance = dLeft;
+        rightOuterDistance = dRight;
+      }
+    }
+    final double eyeAsymmetryPercent =
+        pairResiduals.reduce((double a, double b) => a + b) /
+        pairResiduals.length;
+
+    // ---- 2. Chin angle ---------------------------------------------------
     final double jawAngleDegrees = (jawLeft - chin).angleTo(jawRight - chin);
 
-    // ---- 3. Facial thirds -------------------------------------------------
-    // Vertical (y) spans between the requested landmarks. Ratios of y-spans are
-    // scale-free, so this metric survives any uniform zoom — but it does depend
-    // on the head being level, hence the roll warning later.
+    // ---- 3. Facial thirds ------------------------------------------------
     final double upper = (glabella.y - foreheadTop.y).abs();
-    final double middle = (noseBase.y - glabella.y).abs();
-    final double lower = (chin.y - noseBase.y).abs();
+    final double middle = (subnasale.y - glabella.y).abs();
+    final double lower = (chin.y - subnasale.y).abs();
     final double totalHeight = upper + middle + lower;
     if (totalHeight <= minScale || !totalHeight.isFinite) {
       throw const FacialAnalysisException(
@@ -104,9 +149,9 @@ class FacialAnalysisService {
       );
     }
 
-    // ---- Pose sanity checks ----------------------------------------------
-    final double leftHalf = noseBridge.distanceTo(faceLeft);
-    final double rightHalf = noseBridge.distanceTo(faceRight);
+    // ---- Pose ------------------------------------------------------------
+    final double leftHalf = nasion.distanceTo(faceLeft);
+    final double rightHalf = nasion.distanceTo(faceRight);
     final double widerHalf = math.max(leftHalf, rightHalf);
     final double yawIndex = widerHalf <= minScale
         ? 1.0
@@ -114,15 +159,19 @@ class FacialAnalysisService {
 
     return RawFaceMetrics(
       eyeAsymmetryPercent: eyeAsymmetryPercent,
-      eyeDistanceRatio: dRight <= minScale ? 1.0 : dLeft / dRight,
+      eyeDistanceRatio: rightOuterDistance <= minScale
+          ? 1.0
+          : leftOuterDistance / rightOuterDistance,
       jawAngleDegrees: jawAngleDegrees,
       upperThirdFraction: upper / totalHeight,
       middleThirdFraction: middle / totalHeight,
       lowerThirdFraction: lower / totalHeight,
       interocularDistance: interocular,
       yawIndex: yawIndex.clamp(0.0, 1.0),
-      rollDegrees: _normalisedRoll(leftEye, rightEye),
+      rollDegrees: _normalisedRoll(leftEyeOuter, rightEyeOuter),
       landmarkCount: points.length,
+      symmetryPairCount: pairResiduals.length,
+      meshSpread: faceHeight,
     );
   }
 
@@ -139,6 +188,23 @@ class FacialAnalysisService {
       );
     }
     return point;
+  }
+
+  Vec2 _midpoint(Vec2 a, Vec2 b) => Vec2((a.x + b.x) / 2, (a.y + b.y) / 2);
+
+  /// Absolute perpendicular distance from [point] to the line through [origin]
+  /// with direction [direction]. An unsigned distance is right for this check:
+  /// which side of the midline a landmark falls on is exactly what mirroring
+  /// flips, and the pair difference below captures it.
+  double _perpendicularDistance(Vec2 point, Vec2 origin, Vec2 direction) {
+    final double length = direction.magnitude;
+    if (length <= 1e-9) {
+      return 0;
+    }
+    final Vec2 offset = point - origin;
+    // |cross(direction, offset)| / |direction|
+    final double cross = direction.x * offset.y - direction.y * offset.x;
+    return (cross / length).abs();
   }
 
   /// Tilt of the eye line relative to horizontal, folded into `(-90, 90]` so a

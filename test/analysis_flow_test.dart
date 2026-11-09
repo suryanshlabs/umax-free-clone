@@ -209,15 +209,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Analysis complete'), findsOneWidget);
-    expect(find.text('Balanced'), findsOneWidget);
+    expect(find.text('Mixed'), findsOneWidget);
     // Each title appears on its measurement card and, for the weakest one, on
     // the core-weakness card as well.
     expect(find.text('Eye symmetry'), findsWidgets);
-    expect(find.text('Jawline angularity'), findsWidgets);
+    expect(find.text('Chin angle'), findsWidgets);
     expect(find.text('Facial thirds'), findsWidgets);
     expect(find.textContaining('468 landmarks'), findsOneWidget);
-    expect(find.text('POTENTIAL'), findsOneWidget);
-    expect(find.text('CORE WEAKNESS AREA'), findsOneWidget);
+    expect(find.text('LOWEST AGREEMENT'), findsOneWidget);
+    // The artificial projection is gone for good.
+    expect(find.text('POTENTIAL'), findsNothing);
 
     controller.dispose();
   });

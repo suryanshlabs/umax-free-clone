@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../core/image_store.dart';
 import '../core/report.dart';
 import '../core/user_profile.dart';
 import 'scan_history.dart';
@@ -57,7 +58,7 @@ class ScanHistory extends ChangeNotifier {
   ScanHistory({ScanHistoryStorage? storage, this.maxEntries = 60})
     : _storage = storage ?? FileScanHistoryStorage();
 
-  static const int version = 2;
+  static const int version = 3;
 
   final ScanHistoryStorage _storage;
   final int maxEntries;
@@ -87,9 +88,13 @@ class ScanHistory extends ChangeNotifier {
       final String? contents = await _storage.read();
       final List<SavedScan> scans = _decode(contents);
       _scans = scans;
-      if (scans.isNotEmpty) {
-        _profile = scans.first.profile;
-      }
+      _profile = _decodeProfile(contents);
+
+      // Prune prepared photos that no saved scan points at. Fire-and-forget:
+      // a cleanup failure must not block the history from loading.
+      await ImageStore.sweepUnreferenced(
+        _scans.map((SavedScan scan) => scan.imagePath),
+      );
     } on Exception catch (error) {
       debugPrint('Scan history could not be read: $error');
       _scans = <SavedScan>[];
@@ -100,7 +105,9 @@ class ScanHistory extends ChangeNotifier {
     }
   }
 
-  Future<void> setProfile(UserProfile profile) async {
+  /// Stores the optional gender answer. Passing null clears it; the scan
+  /// records themselves never reference it.
+  Future<void> setProfile(UserProfile? profile) async {
     _profile = profile;
     await _persist();
     notifyListeners();
@@ -118,19 +125,36 @@ class ScanHistory extends ChangeNotifier {
     await _persist();
   }
 
+  /// Removes one scan and its photo.
+  ///
+  /// The photo is deleted only after the history has been rewritten, so a write
+  /// failure cannot leave the history pointing at a file that is already gone.
   Future<void> remove(String id) async {
-    _scans = <SavedScan>[
-      for (final SavedScan scan in _scans)
-        if (scan.id != id) scan,
-    ];
+    String? removedPath;
+    final List<SavedScan> kept = <SavedScan>[];
+    for (final SavedScan scan in _scans) {
+      if (scan.id == id) {
+        removedPath = scan.imagePath;
+      } else {
+        kept.add(scan);
+      }
+    }
+    _scans = kept;
     notifyListeners();
     await _persist();
+
+    if (removedPath != null &&
+        !_scans.any((SavedScan scan) => scan.imagePath == removedPath)) {
+      await ImageStore.deleteManaged(removedPath);
+    }
   }
 
+  /// Removes every scan and every photo this app prepared for them.
   Future<void> clear() async {
     _scans = <SavedScan>[];
     notifyListeners();
     await _persist();
+    await ImageStore.deleteAllPrepared();
   }
 
   Future<void> _persist() async {
@@ -138,16 +162,7 @@ class ScanHistory extends ChangeNotifier {
       await _storage.write(
         jsonEncode(<String, Object?>{
           'version': version,
-          'profile': _profile == null
-              ? null
-              : <String, Object?>{
-                  'gender': _profile?.gender.name,
-                  'age': _profile?.age,
-                  'heightCm': _profile?.heightCm,
-                  'weightKg': _profile?.weightKg,
-                  'heightKnown': _profile?.heightKnown,
-                  'weightKnown': _profile?.weightKnown,
-                },
+          'profile': _profile?.toJson(),
           'scans': <Object?>[
             for (final SavedScan scan in _scans) scan.toJson(),
           ],
@@ -155,6 +170,27 @@ class ScanHistory extends ChangeNotifier {
       );
     } on Exception catch (error) {
       debugPrint('Scan history could not be saved: $error');
+    }
+  }
+
+  /// Reads the optional profile from the file root.
+  ///
+  /// Version 2 and older stored age, height, weight and BMI next to the gender.
+  /// Only the gender is kept: those body-composition fields are not part of the
+  /// profile any more, so they stop being rewritten. Scan records are untouched
+  /// by this and still load exactly as they were saved.
+  UserProfile? _decodeProfile(String? contents) {
+    if (contents == null || contents.trim().isEmpty) {
+      return null;
+    }
+    try {
+      final Object? decoded = jsonDecode(contents);
+      if (decoded is! Map) {
+        return null;
+      }
+      return UserProfile.fromJson(decoded['profile']);
+    } on FormatException {
+      return null;
     }
   }
 

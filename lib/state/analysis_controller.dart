@@ -110,18 +110,14 @@ class AnalysisController extends ChangeNotifier {
       }
 
       final RawFaceMetrics metrics = _service.measure(reading.points);
-      final AnalysisReport report = _engine.build(
-        metrics,
-        imagePath: path,
-        profile: _history?.profile,
-      );
+      final AnalysisReport report = _engine.build(metrics, imagePath: path);
 
       final List<String> warnings = List<String>.of(report.qualityWarnings);
       if (!reading.isLargeEnough) {
         warnings.add(
           'Your face filled only a small part of the frame. Move closer so the '
-          'mesh has more pixels per feature; that alone can shift a score by '
-          'several points.',
+          'mesh has more pixels per feature; that alone can shift a '
+          'measurement by several points.',
         );
       }
       if (reading.faceCount > 1) {
@@ -135,10 +131,6 @@ class AnalysisController extends ChangeNotifier {
 
       final AnalysisReport enriched = AnalysisReport(
         overallScore: report.overallScore,
-        potentialScore: report.potentialScore,
-        potentialGain: report.potentialGain,
-        grade: report.grade,
-        gradeBlurb: report.gradeBlurb,
         metrics: report.metrics,
         coreWeakness: report.coreWeakness,
         raw: report.raw,
@@ -146,7 +138,6 @@ class AnalysisController extends ChangeNotifier {
         safetyNote: report.safetyNote,
         createdAt: report.createdAt,
         imagePath: report.imagePath,
-        profile: report.profile,
       );
       _report = enriched;
       _phase = AnalysisPhase.ready;

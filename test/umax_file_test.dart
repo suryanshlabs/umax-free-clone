@@ -27,7 +27,10 @@ void main() {
 
     expect(decoded.title, 'Alex jawline check');
     expect(decoded.scan.overallScore, closeTo(report.overallScore, 1e-9));
-    expect(decoded.scan.potentialScore, closeTo(report.potentialScore, 1e-9));
+    expect(
+      decoded.scan.metrics.map((SavedMetric m) => m.score).toList(),
+      report.metrics.map((MetricResult m) => m.score).toList(),
+    );
     expect(decoded.scan.createdAt, report.createdAt);
     expect(decoded.scan.metrics, hasLength(3));
 

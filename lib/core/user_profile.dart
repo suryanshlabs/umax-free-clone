@@ -1,71 +1,65 @@
-/// A minimal on-device user profile used to personalise body-composition
-/// advice. Nothing here reaches the network; it lives in `ScanHistory` and is
-/// optional, so the app still works when the user skips it.
+/// The face-scan profile.
+///
+/// Deliberately tiny: gender is the only thing this app asks for, it is
+/// optional, and it is never read by the geometry, scoring or feedback code.
+/// Height, weight, age and BMI used to live here and have moved to the separate
+/// BMI Calculator (`lib/core/bmi.dart`), which stores nothing.
+///
+/// Nothing here reaches the network; the app has no accounts or uploads.
 class UserProfile {
-  const UserProfile({
-    this.gender = Gender.other,
-    this.age = 0,
-    this.heightCm,
-    this.weightKg,
-    this.heightKnown = true,
-    this.weightKnown = true,
-  });
+  const UserProfile({this.gender});
 
-  final Gender gender;
-  final int age;
-  final double? heightCm;
-  final double? weightKg;
-  final bool heightKnown;
-  final bool weightKnown;
+  /// Null means "not answered", which is different from "prefer not to say".
+  final Gender? gender;
 
-  /// Local BMI when both height and weight are provided and usable,
-  /// otherwise 0 (meaning unknown / skipped).
-  double get bmi => computeBmi();
+  bool get isEmpty => gender == null;
 
-  /// Returns the BMI when height and weight are present and positive, otherwise 0.
-  double computeBmi() {
-    if (!heightKnown || !weightKnown || heightCm == null || weightKg == null) {
-      return 0.0;
-    }
-    return bmiFromMetrics(heightCm!, weightKg!);
-  }
+  Map<String, Object?> toJson() => <String, Object?>{'gender': gender?.name};
 
-  /// Category string and band for advice personalisation.
-  (String label, BmiCategory category) get bmiCategory {
-    final double bmi = computeBmi();
-    if (bmi <= 0) {
-      return ('Unknown', BmiCategory.unknown);
+  /// Reads only the gender. Older files also carried age, height, weight and
+  /// BMI; those keys are ignored here so an old profile still opens, and the
+  /// body-composition fields stop being carried forward.
+  static UserProfile? fromJson(Object? json) {
+    if (json is! Map) {
+      return null;
     }
-    if (bmi < 18.5) {
-      return ('Underweight', BmiCategory.underweight);
+    final Gender? gender = genderFromName(json['gender']);
+    if (gender == null) {
+      return null;
     }
-    if (bmi < 25) {
-      return ('Normal', BmiCategory.normal);
-    }
-    if (bmi < 30) {
-      return ('Overweight', BmiCategory.overweight);
-    }
-    return ('Obese', BmiCategory.obese);
+    return UserProfile(gender: gender);
   }
 
   @override
-  String toString() {
-    return 'UserProfile(gender: $gender, age: $age, height: ${heightCm ?? -1}, weight: ${weightKg ?? -1}, bmi: ${bmi.toStringAsFixed(1)})';
-  }
+  String toString() => 'UserProfile(gender: ${gender?.name ?? 'not answered'})';
 }
 
-enum Gender { male, female, other }
+/// The four options the onboarding offers, in order.
+///
+/// "Another identity / prefer to self-describe" is one option because the app
+/// does not need a free-text identity to draw a face outline; "Prefer not to
+/// say" is separate because it is an answer, not a blank.
+enum Gender {
+  male('Male'),
+  female('Female'),
+  selfDescribe('Another identity / prefer to self-describe'),
+  preferNotToSay('Prefer not to say');
 
-enum BmiCategory { underweight, normal, overweight, obese, unknown }
+  const Gender(this.label);
 
-/// Body-mass index rounded to one decimal.
-double bmiFromMetrics(double heightCm, double weightKg) {
-  if (heightCm <= 0 || weightKg <= 0) {
-    return 0.0;
+  final String label;
+}
+
+/// Maps a stored name back to a value. Unknown or retired names return null
+/// rather than being guessed.
+Gender? genderFromName(Object? name) {
+  if (name is! String) {
+    return null;
   }
-  final double heightM = heightCm / 100.0;
-  if (heightM <= 0) {
-    return 0.0;
+  for (final Gender gender in Gender.values) {
+    if (gender.name == name) {
+      return gender;
+    }
   }
-  return weightKg / (heightM * heightM);
+  return null;
 }

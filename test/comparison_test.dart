@@ -44,15 +44,15 @@ void main() {
       (MetricDelta d) => d.id == MetricId.jawline,
     );
 
-    // Symmetry improved by 0.4 points of asymmetry, so the score went up.
+    // Asymmetry dropped by 0.4 points, so agreement went up.
     expect(symmetry.points, greaterThan(0));
     expect(symmetry.percentText, startsWith('+'));
     expect(symmetry.percentText, endsWith('%'));
-    expect(symmetry.rawChangeText, 'more even by 0.4%');
+    expect(symmetry.rawChangeText, '0.4% lower');
 
-    // A four degree drop in chin angle is the "optimized by 4°" headline.
-    expect(jaw.isImprovement, isTrue);
-    expect(jaw.rawChangeText, 'optimized by 4\u00B0');
+    // The raw change is described by direction only, never as "optimised".
+    expect(jaw.isHigher, isTrue);
+    expect(jaw.rawChangeText, '4\u00B0 lower');
   });
 
   test('a worse measurement reads as a decline, not a win', () {
@@ -67,10 +67,10 @@ void main() {
     final MetricDelta symmetry = result.deltas.firstWhere(
       (MetricDelta d) => d.id == MetricId.eyeSymmetry,
     );
-    expect(symmetry.isDecline, isTrue);
-    expect(symmetry.isImprovement, isFalse);
+    expect(symmetry.isLower, isTrue);
+    expect(symmetry.isHigher, isFalse);
     expect(symmetry.percentText, startsWith('\u2212'));
-    expect(symmetry.rawChangeText, 'less even by 3.0%');
+    expect(symmetry.rawChangeText, '3.0% higher');
     expect(result.overallDelta, lessThan(0));
     expect(result.overallPercentText, startsWith('\u2212'));
   });
@@ -92,12 +92,15 @@ void main() {
     expect(result.overallFlat, isTrue);
     expect(result.overallPointsText, 'no meaningful change');
     expect(result.biggestSwing, isNull);
-    expect(result.leader, isNull);
-    expect(result.ties, result.deltas.length);
+    expect(result.allWithinNoise, isTrue);
+    expect(result.unchangedCount, result.deltas.length);
+    // There is no winner field at all: a comparison never ranks people.
+    expect(result.higherCount, 0);
+    expect(result.lowerCount, 0);
   });
 
-  test('the leaderboard ranks categories by who gained most', () {
-    // Jaw improves a lot, symmetry barely, thirds not at all.
+  test('differences are ordered by size, not by who won', () {
+    // Jaw moves a lot, symmetry barely, thirds not at all.
     final AnalysisReport before = const ScoringEngine().build(
       faceMetrics(asymmetry: 1.2, jawAngle: 140, upper: 0.36),
     );
@@ -110,9 +113,8 @@ void main() {
       after: ComparisonEntry.fromReport(after, label: 'Friend'),
     );
 
-    expect(result.leaderboard.first.id, MetricId.jawline);
-    expect(result.leader?.label, 'Friend');
-    expect(result.winsAfter, greaterThan(result.winsBefore));
+    expect(result.byChange.first.id, MetricId.jawline);
+    expect(result.higherCount, greaterThan(result.lowerCount));
     expect(result.biggestSwing?.id, MetricId.jawline);
     expect(result.percentChangeOf(MetricId.jawline), greaterThan(0));
   });

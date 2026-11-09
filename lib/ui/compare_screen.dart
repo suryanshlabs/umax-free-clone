@@ -18,7 +18,7 @@ import 'theme.dart';
 /// What the comparison screen is for.
 enum CompareMode {
   progress('Compare My Progress', 'Two scans of you, measured the same way'),
-  versus('Friend VS Mode', 'Two faces against the same ruler');
+  versus('Compare Reports', 'Two reports measured the same way');
 
   const CompareMode(this.title, this.subtitle);
 
@@ -26,7 +26,7 @@ enum CompareMode {
   final String subtitle;
 }
 
-/// Which two things Friend VS puts against each other.
+/// Which two reports the comparison screen puts side by side.
 enum VersusInput {
   photos('Photos', 'Measure two faces now'),
   reports('Reports', 'Two saved .umax reports');
@@ -452,13 +452,16 @@ class _CompareScreenState extends State<CompareScreen> {
     return <Widget>[
       _OverallDelta(result: result, versus: versus),
       const SizedBox(height: 22),
-      _SectionLabel(versus ? 'VERSUS LEADERBOARD' : 'IMPROVEMENT MATRIX'),
+      _SectionLabel(
+        versus ? 'MEASUREMENT DIFFERENCES' : 'CHANGE SINCE EARLIER',
+      ),
       const SizedBox(height: 4),
       Text(
         versus
-            ? 'Every category, ordered by who gained the most. A metric is only '
-                  'called once it clears the noise band.'
-            : 'Score change first, then the same change in the measurement '
+            ? 'Every measurement, ordered by the size of the difference. A '
+                  'difference inside the noise band is shown as even; the two '
+                  'sides are not ranked.'
+            : 'Agreement change first, then the same change in the measurement '
                   'itself.',
         style: const TextStyle(
           fontSize: 11,
@@ -467,7 +470,7 @@ class _CompareScreenState extends State<CompareScreen> {
         ),
       ),
       const SizedBox(height: 12),
-      for (final MetricDelta delta in result.leaderboard)
+      for (final MetricDelta delta in result.byChange)
         _DeltaCard(delta: delta, versus: versus),
       if (versus) ...<Widget>[
         const SizedBox(height: 10),
@@ -1013,9 +1016,11 @@ class _DeltaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Both directions use the same neutral accent: a higher number means
+    // closer agreement with a reference, not a better face.
     final Color color = delta.isFlat
         ? AppColors.textTertiary
-        : (delta.isImprovement ? AppColors.mint : AppColors.danger);
+        : AppColors.accentSoft;
     final String? raw = delta.rawChangeText;
 
     return Container(
@@ -1052,7 +1057,7 @@ class _DeltaCard extends StatelessWidget {
                   versus
                       ? (delta.isFlat
                             ? 'even'
-                            : (delta.isImprovement ? 'B wins' : 'A wins'))
+                            : (delta.isHigher ? 'B higher' : 'B lower'))
                       : delta.percentText,
                   style: TextStyle(
                     fontSize: 10.5,
@@ -1207,20 +1212,17 @@ class _LeaderBoardSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ComparisonEntry? leader = result.leader;
-    final Color color = leader == null
-        ? AppColors.textSecondary
-        : AppColors.mint;
-    final int wins = result.winsAfter >= result.winsBefore
-        ? result.winsAfter
-        : result.winsBefore;
-    final String title = leader == null
-        ? 'Even match'
-        : '${leader.label} leads';
-    final String detail = leader == null
-        ? '${result.ties} of ${result.deltas.length} categories sit inside the '
-              'noise band, so this one is a draw.'
-        : '$wins of ${result.deltas.length} categories won by score.';
+    final bool even = result.allWithinNoise;
+    final Color color = even ? AppColors.textSecondary : AppColors.accentSoft;
+    final String title = even
+        ? 'No measurable difference'
+        : 'How the two sides differ';
+    final String detail = even
+        ? 'All ${result.deltas.length} measurements sit inside the noise band '
+              'for these photos, so this app cannot tell the two sides apart.'
+        : '${result.higherCount} measurement(s) read higher on the second side, '
+              '${result.lowerCount} lower, and ${result.unchangedCount} '
+              'unchanged. That describes the measurements, not the people.';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -1232,9 +1234,7 @@ class _LeaderBoardSummary extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            leader == null
-                ? Icons.handshake_outlined
-                : Icons.emoji_events_outlined,
+            even ? Icons.handshake_outlined : Icons.straighten_rounded,
             size: 18,
             color: color,
           ),
@@ -1276,20 +1276,16 @@ class _Verdict extends StatelessWidget {
   final bool versus;
 
   String _text() {
-    final ComparisonEntry? leader = result.leader;
     if (versus) {
-      if (leader == null) {
-        return 'Even on every category. Two faces this close measured from two '
-            'photos means the difference is inside the noise of how they were '
-            'captured.';
+      if (result.allWithinNoise) {
+        return 'No measurement clears the noise band, so there is nothing here '
+            'to compare. Two photos taken at different angles can differ by '
+            'more than this on the same face.';
       }
-      final int wins = result.winsAfter >= result.winsBefore
-          ? result.winsAfter
-          : result.winsBefore;
-      return '${leader.label} takes it on $wins of '
-          '${result.deltas.length} categories. One photo, one angle, one '
-          'lighting setup: read the raw numbers before reading anything into '
-          'the ranking.';
+      return 'These are two sets of measurements from two photos, not a '
+          'ranking. Camera distance, head angle and lighting move every number '
+          'on this screen, and the app cannot control for any of them. Read the '
+          'raw values and their capture notes before drawing a conclusion.';
     }
     if (result.overallFlat) {
       return 'Holding steady. Two readings within noise of each other is '

@@ -1,30 +1,40 @@
 import 'metrics.dart';
 import 'report.dart';
-import 'user_profile.dart';
 
+/// Informational notes attached to each measurement.
+///
+/// Rules this file follows, and which any edit should keep:
+///
+/// * No attractiveness claims. A geometric agreement value says how close a
+///   measurement is to a stated reference, not how someone looks.
+/// * No weight-loss, diet, supplement or "fat loss reveals the jaw" advice, and
+///   no target weights. BMI lives in its own tool and never feeds back here.
+/// * No structural promises. Bone does not change in response to a habit, and
+///   surgery/filler are framed as clinical decisions, not improvements.
+/// * No "fix your asymmetry" framing. Most asymmetry is normal and stable.
+/// * The strongest lever on every one of these numbers is the photograph.
 class FeedbackEngine {
   const FeedbackEngine();
 
   List<AdviceItem> forEyeSymmetry(RawFaceMetrics metrics, double score) {
-    final String worseSide = metrics.eyeDistanceRatio >= 1 ? 'left' : 'right';
     if (score >= 85) {
       return <AdviceItem>[
         const AdviceItem(
-          title: 'Keep the conditions consistent',
+          title: 'Nothing here is unusual',
           detail:
-              'This reading is inside the mirrored band, so the useful next '
-              'step is comparability: same room, same light, same distance, '
-              'same time of day. Re-scan weekly and watch the trend, not the '
-              'single number.',
+              'All four mirrored pairs sat close to the midline in this photo. '
+              'Re-scan under the same light if you want a comparable number; '
+              'small differences between scans are normal and are more often '
+              'the camera than the face.',
           evidence: EvidenceStrength.measurement,
         ),
         const AdviceItem(
-          title: 'Do not chase zero',
+          title: 'Perfect mirror symmetry is not a target',
           detail:
-              'Almost every face is a few percent asymmetric, and a perfect '
-              '40/40 split is not the goal. Differences under about 3% are '
-              'within the range that landmark detection itself can produce on '
-              'two photos of the same unchanged face.',
+              'Nobody is exactly mirrored, and landmark detection on two '
+              'photos of an unchanged face already varies by a fraction of a '
+              'percent. A reading near zero is not better than a reading a '
+              'little above it; both describe normal faces.',
           evidence: EvidenceStrength.moderate,
         ),
       ];
@@ -32,254 +42,179 @@ class FeedbackEngine {
 
     final List<AdviceItem> advice = <AdviceItem>[
       AdviceItem(
-        title: 'Rule out the camera before the mirror',
+        title: 'Check the capture before reading anything into this',
         detail:
-            'At this level the photo is usually the bigger variable. Holding '
-            'the phone off-centre, tilting the head two degrees, or lighting '
-            'one cheek more than the other moves this reading by more than any '
-            'habit will. Your left-to-right eye-distance ratio came out at '
-            '${metrics.eyeDistanceRatio.toStringAsFixed(2)} : 1 with the '
-            '$worseSide side reading longer. Retake at eye level, 50–70 cm '
-            'away, with even light.',
+            'Your mirrored pairs averaged '
+            '${metrics.eyeAsymmetryPercent.toStringAsFixed(1)}% away from the '
+            'midline. A head turned a few degrees, a phone held to one side, or '
+            'uneven light moving the detected face edge will produce that on a '
+            'perfectly symmetrical face. Retake at eye level, 50-70 cm away, '
+            'with the phone square to your face and even light.',
         evidence: EvidenceStrength.measurement,
       ),
       const AdviceItem(
-        title: 'Alternate sleep sides, or sleep on your back',
+        title: 'Asymmetry is common and usually stable',
         detail:
-            'Sustained pressure from one pillow side is the most commonly cited '
-            'environmental contributor to soft-tissue facial asymmetry. The '
-            'evidence is observational rather than experimental, so treat this '
-            'as a free habit change rather than a guaranteed fix — but it costs '
-            'nothing to rotate sides.',
+            'Facial asymmetry of a few percent is typical across populations '
+            'and generally changes slowly. This app cannot tell you whether a '
+            'difference is new: only a comparison with older photos, or an '
+            'examination, can do that.',
         evidence: EvidenceStrength.moderate,
       ),
       const AdviceItem(
-        title: 'Chew on both sides',
+        title: 'If the difference is new, it is a medical question',
         detail:
-            'Habitual one-sided chewing loads one masseter and one '
-            'temporomandibular joint harder, and dental research links it to '
-            'measurable asymmetry in the lower face. Deliberately starting '
-            'meals on the non-dominant side is the whole intervention.',
-        evidence: EvidenceStrength.moderate,
-      ),
-      const AdviceItem(
-        title: 'Stop resting your chin in one hand',
-        detail:
-            'Repeated leaning puts steady pressure on one cheekbone and jaw '
-            'edge for hours at a time. The effect per session is tiny; the '
-            'cumulative effect of a decade of desk posture is the reason it '
-            'shows up in photos.',
-        evidence: EvidenceStrength.emerging,
+            'A sudden change in one side of the face - drooping, weakness, '
+            'numbness, or a change in speech - needs prompt medical assessment '
+            'and is not something to track in an app. Long-standing, stable '
+            'differences are a different matter and are usually not a health '
+            'concern at all.',
+        evidence: EvidenceStrength.strong,
       ),
     ];
     return advice;
   }
 
-  List<AdviceItem> forJawline(RawFaceMetrics metrics, double score,
-      {double? bmi, BmiCategory? bmiCategory}) {
-    final bool prioritiseFat = bmiCategory == BmiCategory.overweight ||
-        bmiCategory == BmiCategory.obese;
-    final bool prioritiseFluid = prioritiseFat || (bmi ?? 0) >= 25;
-
+  /// Notes for the chin angle. Body composition, weight, height and age are
+  /// deliberately not inputs: the BMI tool is separate and can never reword a
+  /// facial measurement.
+  List<AdviceItem> forJawline(RawFaceMetrics metrics, double score) {
+    final String reading = metrics.jawAngleDegrees.toStringAsFixed(0);
     if (score >= 85) {
       return <AdviceItem>[
-        const AdviceItem(
-          title: 'This is a defined, tapered jaw',
-          detail:
-              'The jaw edges converge sharply towards the chin, which is the '
-              'geometry people read as "angular". Nothing needs fixing. If you '
-              'want a stronger front profile, the only lever left is leaning '
-              'out further, and that is a body-composition decision, not a '
-              'facial one.',
-          evidence: EvidenceStrength.strong,
-        ),
         AdviceItem(
-          title: 'Protect it from puffiness',
+          title: 'This is a narrow chin angle',
           detail:
-              'The jaw–neck border is the first thing a salty meal, alcohol or '
-              'a short night blurs. If you are photographing something, keep '
-              'the evening before low-sodium and get the sleep.',
-          evidence: prioritiseFluid
-              ? EvidenceStrength.strong
-              : EvidenceStrength.moderate,
+              'Your jaw contour converges sharply towards the chin ($reading'
+              '\u00B0 between landmarks 172 and 397). That is one geometric '
+              'shape among many, not a better one. The measurement is a '
+              'front-view chin angle, and it moves with head pitch, so compare '
+              'it only against your own scans taken the same way.',
+          evidence: EvidenceStrength.measurement,
+        ),
+        const AdviceItem(
+          title: 'Keep the pose identical to compare',
+          detail:
+              'A few degrees of chin lift changes this angle more than anything '
+              'else you could do between scans. Photograph at eye level with '
+              'your face relaxed and your teeth lightly together.',
+          evidence: EvidenceStrength.measurement,
         ),
       ];
     }
 
-    final bool isObtuse = metrics.jawAngleDegrees > 105;
-    final String bmiNote = (bmi ?? 0) > 25
-        ? ' With your BMI around ${(bmi ?? 0).toStringAsFixed(1)}, the face '
-          'is one of the first places a body-composition change shows up.'
-        : '';
-    final String fluidNote =
-        (bmiCategory == BmiCategory.overweight ||
-                bmiCategory == BmiCategory.obese) &&
-            (bmi ?? 0) > 0
-        ? ' For you this is especially worth dialling in before a photo, '
-          'because fluid reads as jaw softness more than it does at a lower BMI.'
-        : '';
-    final List<AdviceItem> advice = <AdviceItem>[
+    return <AdviceItem>[
       AdviceItem(
-        title: isObtuse
-            ? (prioritiseFat
-                ? 'Body composition is the main, immediate lever'
-                : 'Body composition is the main lever')
-            : 'Define the border before chasing the angle',
+        title: 'What this angle does and does not measure',
         detail:
-            'What reads as a jawline is mostly the fat layer sitting over the '
-            'mandible, and that layer is not spot-reducible. A modest calorie '
-            'deficit, adequate protein and resistance training lowers fat '
-            'everywhere, and the face usually shows it early because the fat '
-            'layer there is thin. Your chin-to-jaw-edge angle measured '
-            '${metrics.jawAngleDegrees.toStringAsFixed(0)}°.$bmiNote',
-        evidence: EvidenceStrength.strong,
-      ),
-      AdviceItem(
-        title: 'Drop the fluid, temporarily',
-        detail:
-            'High sodium, alcohol and short sleep all increase facial fluid '
-            'retention, which blurs the jaw–neck border for a day or two. '
-            'Water, sleep and an easy evening make a visible difference to a '
-            'photo. It is cosmetic and it reverses; do not read it as progress.$fluidNote',
-        evidence: prioritiseFluid
-            ? EvidenceStrength.strong
-            : EvidenceStrength.moderate,
+            'The two jaw-contour landmarks made a $reading\u00B0 angle at your '
+            'chin in this photo. That describes the front silhouette of your '
+            'lower face. It is not a gonial angle (those need a true side view '
+            'and a clinical landmark set), and it is not a measure of jaw '
+            'strength, bite or health.',
+        evidence: EvidenceStrength.measurement,
       ),
       const AdviceItem(
-        title: 'Fix posture and camera angle',
+        title: 'Pose, lens and expression move it most',
         detail:
-            'Forward head posture flattens the angle between jaw and neck. '
-            'Stand tall, push the chin slightly forward and down, and hold the '
-            'phone at eye level or a touch above. This is the single largest '
-            'difference between a soft and a defined jaw in a photo, and it '
-            'costs nothing.',
-        evidence: EvidenceStrength.strong,
+            'Chin height, camera distance and focal length all change the '
+            'apparent angle: a phone held close widens the lower face, and a '
+            'raised chin flattens it. For a comparable reading, use the same '
+            'distance and eye level every time.',
+        evidence: EvidenceStrength.measurement,
       ),
       const AdviceItem(
-        title: 'Tongue posture is a habit, not a treatment',
+        title: 'Structural options are a clinical decision',
         detail:
-            'Resting the whole tongue against the palate with lips sealed '
-            '("mewing") is reasonable posture and helps if you mouth-breathe. '
-            'Claims that it remodels an adult mandible are not supported by '
-            'good clinical evidence. Do it because it is better resting '
-            'posture, not because it will move bone.',
-        evidence: EvidenceStrength.emerging,
-      ),
-      const AdviceItem(
-        title: 'Hard chewing cuts both ways',
-        detail:
-            'Chewing gum or tough food can grow the masseter, which widens the '
-            'lower face. From the front that can look powerful, but it also '
-            'spreads the two jaw-edge points this score is built from, so the '
-            'number moves down. Decide which look you want before you train it.',
+            'Orthodontics and jaw surgery can change the lower face, and both '
+            'carry real cost and risk. Whether either is appropriate is a '
+            'question for a dentist or maxillofacial specialist who can examine '
+            'you in person. A photo measurement is not a basis for that '
+            'decision, and this app does not recommend one.',
         evidence: EvidenceStrength.moderate,
       ),
     ];
-    return advice;
   }
 
   List<AdviceItem> forFacialThirds(RawFaceMetrics metrics, double score) {
     final String dominant = metrics.dominantThird;
-    final List<AdviceItem> advice = <AdviceItem>[
+    return <AdviceItem>[
       AdviceItem(
-        title: 'Level the camera first',
+        title: 'The hairline is the least reliable point',
         detail:
-            'A few degrees of chin lift or tilt moves the apparent thirds more '
-            'than anything structural about your face. Your split reads '
-            '${(metrics.upperThirdFraction * 100).round()} / '
+            'Your split reads ${(metrics.upperThirdFraction * 100).round()} / '
             '${(metrics.middleThirdFraction * 100).round()} / '
             '${(metrics.lowerThirdFraction * 100).round()} percent '
-            '(forehead / midface / lower), with the $dominant the largest. '
-            'Keep the phone vertical and level with your eyes, and shoot the '
-            'same way each time.',
+            '(hairline-brow / brow-nose base / nose base-chin), with the '
+            '$dominant the largest. The upper boundary is estimated from a '
+            'landmark near the hairline, so a fringe, a receding hairline or '
+            'bright light on the forehead can move this reading without '
+            'anything about the face changing.',
         evidence: EvidenceStrength.measurement,
       ),
       const AdviceItem(
-        title: 'Hair is the upper third’s dial',
+        title: 'Keep the head level',
         detail:
-            'The top third is bounded by the hairline, not by bone, which makes '
-            'it the easiest third to change. More volume at the crown lengthens '
-            'it; a flatter, closer cut shortens it. If your lower third '
-            'dominates, volume up top is the cheapest rebalance available.',
-        evidence: EvidenceStrength.moderate,
-      ),
-      const AdviceItem(
-        title: 'Brows set the upper boundary',
-        detail:
-            'Brow height and shape are how most people read where the forehead '
-            'ends and the midface begins. Grooming to tidy the existing line is '
-            'low risk; aggressively reshaping or over-plucking moves the '
-            'boundary and rarely looks better than what you started with.',
-        evidence: EvidenceStrength.emerging,
-      ),
-      const AdviceItem(
-        title: 'Facial hair and jaw framing',
-        detail:
-            'A short beard adds visual length to the lower third, while a clean '
-            'neckline sharpens its edge without changing the proportion. If '
-            'your lower third already dominates, keep the beard short at the '
-            'chin rather than building volume on the jaw corners.',
-        evidence: EvidenceStrength.moderate,
-      ),
-      const AdviceItem(
-        title: 'Structural change is a clinical decision',
-        detail:
-            'Orthodontics, orthognathic surgery and dermal filler can change '
-            'these proportions, and each carries real cost and real risk. That '
-            'conversation belongs with a qualified professional who can examine '
-            'you in person. No app measurement should decide it.',
-        evidence: EvidenceStrength.moderate,
-      ),
-      const AdviceItem(
-        title: 'Why this score is strict',
-        detail:
-            'In the canonical MediaPipe mesh, landmark 2 sits at the top of the '
-            'nose bridge (the radix), not at the base of the nose, so the '
-            'middle third here runs glabella-to-radix and reads shorter than a '
-            'textbook brow-to-subnasale third. The ideal is a reference, not a '
-            'pass mark — compare your own scans to each other, not to 100.',
+            'A few degrees of head tilt or chin lift shifts the vertical thirds '
+            'more than any other measurement in this app. Keep the phone '
+            'vertical, your eyes level with the lens, and a neutral expression.',
         evidence: EvidenceStrength.measurement,
+      ),
+      const AdviceItem(
+        title: 'Proportions are descriptive, not a standard to meet',
+        detail:
+            'The 1 : 1 : 1 split is a classical convention, not a health '
+            'threshold, and real faces vary widely around it. Nothing in this '
+            'measurement indicates a problem with how your face works, bites or '
+            'ages.',
+        evidence: EvidenceStrength.moderate,
+      ),
+      const AdviceItem(
+        title: 'Surgery and fillers are not an app decision',
+        detail:
+            'These proportions can be changed clinically, but each option '
+            'carries cost, risk and irreversible outcomes. That conversation '
+            'belongs with a qualified professional who can examine you in '
+            'person, not with a selfie measurement.',
+        evidence: EvidenceStrength.moderate,
       ),
     ];
-    return advice;
   }
 
+  /// The lowest-agreement measurement, with observation steps.
   WeaknessInsight coreWeakness(List<MetricResult> metrics) {
     if (metrics.isEmpty) {
       throw ArgumentError.value(metrics, 'metrics', 'needs one metric');
     }
     final List<MetricResult> ranked = List<MetricResult>.of(metrics)
       ..sort((MetricResult a, MetricResult b) => a.score.compareTo(b.score));
-    final MetricResult weakest = ranked.first;
+    final MetricResult lowest = ranked.first;
     final MetricResult runnerUp = ranked.length > 1 ? ranked[1] : ranked.first;
 
     return WeaknessInsight(
-      metricId: weakest.id,
-      title: weakest.title,
-      score: weakest.score,
-      rawValue: weakest.rawValue,
-      gapToNextBest: (runnerUp.score - weakest.score).clamp(0.0, 100.0),
-      why: _whyWeakest(weakest, runnerUp),
-      steps: _roadmapFor(weakest),
+      metricId: lowest.id,
+      title: lowest.title,
+      score: lowest.score,
+      rawValue: lowest.rawValue,
+      gapToNextBest: (runnerUp.score - lowest.score).clamp(0.0, 100.0),
+      why: _whyLowest(lowest, runnerUp),
+      steps: _roadmapFor(lowest),
     );
   }
 
-  String _whyWeakest(MetricResult weakest, MetricResult runnerUp) {
-    final String gap = (runnerUp.score - weakest.score) <= 0.5
+  String _whyLowest(MetricResult lowest, MetricResult runnerUp) {
+    final String gap = (runnerUp.score - lowest.score) <= 0.5
         ? 'it is effectively tied with ${runnerUp.title} '
-              '(${runnerUp.score.toStringAsFixed(0)}/100), so treat this as one '
-              'of two equal limits rather than a single flaw'
-        : 'it sits ${(runnerUp.score - weakest.score).toStringAsFixed(0)} points '
-              'below your next measurement, ${runnerUp.title} '
-              '(${runnerUp.score.toStringAsFixed(0)}/100), which makes it the '
-              'single biggest drag on the total';
-    return '${weakest.title} is your lowest score at '
-        '${weakest.score.toStringAsFixed(0)}/100, and $gap. Because the overall '
-        'number is a weighted mean, this is the measurement where the smallest '
-        'real change moves the total the most. It is worth saying plainly: '
-        'nothing in the plan below changes bone. It changes the soft tissue, the '
-        'fluid, the posture and the photo, which is where the headroom actually '
-        'is.';
+              '(${runnerUp.score.toStringAsFixed(0)}/100 agreement), so there '
+              'is no single lowest measurement in this scan'
+        : 'it sits ${(runnerUp.score - lowest.score).toStringAsFixed(0)} points '
+              'below ${runnerUp.title} '
+              '(${runnerUp.score.toStringAsFixed(0)}/100 agreement)';
+    return '${lowest.title} has the lowest agreement with its reference in this '
+        'scan at ${lowest.score.toStringAsFixed(0)}/100, and $gap. Read that as '
+        'a property of one measurement in one photo, not as a defect: the '
+        'capture conditions below usually move it more than anything else, and '
+        'a low value is not a health finding.';
   }
 
   List<RoadmapStep> _roadmapFor(MetricResult metric) {
@@ -292,24 +227,23 @@ class FeedbackEngine {
     return <RoadmapStep>[
       RoadmapStep(
         stage: RoadmapStage.now,
-        title: 'Shoot one comparison-grade photo today',
+        title: 'Take one baseline photo the same way',
         detail:
             'Same room, same window light, phone vertical at eye level, 50-70 '
-            'cm away, neutral face, hair off the forehead. This is your baseline '
-            'frame, and every later step is judged against it. Today your reading '
-            'is $raw.',
+            'cm away, neutral face, hair off the forehead. Every later scan is '
+            'judged against this frame. Today your reading is $raw.',
         evidence: EvidenceStrength.measurement,
       ),
       ...habits,
       const RoadmapStep(
         stage: RoadmapStage.week5plus,
-        title: 'Re-scan and compare, same light',
+        title: 'Re-scan and compare with the same light',
         detail:
-            'Open Compare My Progress and put this scan against the new one. '
-            'Read the three measurements, not the overall number: an overall '
-            'point or two of movement inside a single metric is indistinguishable '
-            'from capture noise. Three scans a week apart is a trend; one scan is '
-            'a snapshot.',
+            'Open Compare and put this scan next to the new one. Read the three '
+            'measurements rather than the combined number: a point or two of '
+            'movement in one measurement is indistinguishable from capture '
+            'noise. Three scans a week apart is a trend; one scan is a '
+            'snapshot.',
         evidence: EvidenceStrength.measurement,
       ),
     ];
@@ -318,71 +252,64 @@ class FeedbackEngine {
   static const List<RoadmapStep> _symmetryHabits = <RoadmapStep>[
     RoadmapStep(
       stage: RoadmapStage.weeks1to2,
-      title: 'Sleep on your back, or rotate sides nightly',
+      title: 'Hold the camera square to your face',
       detail:
-          'Sustained pressure from the same pillow side is the most commonly '
-          'cited environmental contributor to soft-tissue asymmetry. The evidence '
-          'is observational, so this is a free habit rather than a guaranteed '
-          'fix - but rotating sides costs nothing and removes one variable.',
-      evidence: EvidenceStrength.moderate,
+          'The largest error in this measurement is a phone held slightly to '
+          'one side or a face turned a few degrees. A small tripod or a stack '
+          'of books at eye level is the most reliable improvement you can make.',
+      evidence: EvidenceStrength.measurement,
     ),
     RoadmapStep(
       stage: RoadmapStage.weeks3to4,
-      title: 'Chew on the non-dominant side first',
+      title: 'Repeat the scan instead of changing a habit',
       detail:
-          'Habitual one-sided chewing loads one masseter and one '
-          'temporomandibular joint harder, and dental research links it to '
-          'measurable lower-face asymmetry. Start every meal on the weaker side '
-          'for two weeks; that is the entire intervention.',
-      evidence: EvidenceStrength.moderate,
+          'Take three scans on different days with the same setup. If the '
+          'readings agree, the difference is real for this measurement; if they '
+          'swing by several percent, the variation is the camera and the number '
+          'should not be tracked at all.',
+      evidence: EvidenceStrength.measurement,
     ),
   ];
 
-  static final List<RoadmapStep> _jawlineHabits = <RoadmapStep>[
-    const RoadmapStep(
+  static const List<RoadmapStep> _jawlineHabits = <RoadmapStep>[
+    RoadmapStep(
       stage: RoadmapStage.weeks1to2,
-      title: 'Hold a small deficit with enough protein',
+      title: 'Standardise chin height',
       detail:
-          'A jawline is mostly the fat layer over the mandible, and that layer '
-          'is not spot-reducible. A modest calorie deficit with adequate protein '
-          'and resistance training lowers fat everywhere; the face shows it early '
-          'because the layer there is thin. Aim for slow - about 0.5 percent of '
-          'bodyweight a week - so the face does not read as gaunt instead.',
-      evidence: EvidenceStrength.strong,
+          'Rest your eyes level with the lens and keep your teeth lightly '
+          'together. Raising or lowering the chin changes the measured angle '
+          'more than any habit will, and it is the easiest thing to control.',
+      evidence: EvidenceStrength.measurement,
     ),
-    const RoadmapStep(
+    RoadmapStep(
       stage: RoadmapStage.weeks3to4,
-      title: 'Sleep 7-9 hours and keep sodium steady',
+      title: 'Keep camera distance constant',
       detail:
-          'Short sleep, alcohol and a salty evening all increase facial fluid '
-          'retention, which blurs the jaw-neck border for a day or two. This is '
-          'cosmetic and it reverses, so read it as photo hygiene rather than '
-          'progress: it is the difference between a soft and a clean border in a '
-          'picture taken tomorrow morning.',
-      evidence: EvidenceStrength.moderate,
+          'A phone held close widens the lower face and changes the apparent '
+          'jaw contour. Pick a distance (about an arm\'s length) and use it for '
+          'every scan so the comparison is like for like.',
+      evidence: EvidenceStrength.measurement,
     ),
   ];
 
   static const List<RoadmapStep> _thirdsHabits = <RoadmapStep>[
     RoadmapStep(
       stage: RoadmapStage.weeks1to2,
-      title: 'Rebalance with hair volume, not surgery',
+      title: 'Expose the hairline for the scan',
       detail:
-          'The upper third is bounded by the hairline, not by bone, which makes '
-          'it the one third you can move this month. Volume at the crown '
-          'lengthens it; a flatter, closer cut shortens it. Photograph the same '
-          'cut for two weeks before judging it.',
-      evidence: EvidenceStrength.moderate,
+          'The upper third is bounded by a landmark near the hairline, so hair '
+          'over the forehead or a strong highlight hides the boundary and '
+          'shortens the reading. Push hair back and use soft, even light.',
+      evidence: EvidenceStrength.measurement,
     ),
     RoadmapStep(
       stage: RoadmapStage.weeks3to4,
-      title: 'Set the hairline and jaw framing deliberately',
+      title: 'Compare trends, not single scans',
       detail:
-          'Tidy the existing brow line rather than reshaping it, and keep a beard '
-          'short at the chin with a clean neckline: that sharpens the lower '
-          'third edge without adding width at the jaw corners. Both are '
-          'reversible, which is the point.',
-      evidence: EvidenceStrength.moderate,
+          'Facial proportions change little in weeks. If three scans a week '
+          'apart agree, that is your baseline; a single scan that disagrees '
+          'with them is more likely a different camera position.',
+      evidence: EvidenceStrength.measurement,
     ),
   ];
 }

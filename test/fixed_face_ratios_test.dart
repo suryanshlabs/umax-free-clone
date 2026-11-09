@@ -24,11 +24,13 @@ void main() {
       metrics = service.measure(syntheticFace());
     });
 
-    test('symmetry is zero when both eyes sit equidistant from the midline',
-        () {
-      expect(metrics.eyeAsymmetryPercent, closeTo(0, 1e-9));
-      expect(metrics.eyeDistanceRatio, closeTo(1, 1e-9));
-    });
+    test(
+      'symmetry is zero when both eyes sit equidistant from the midline',
+      () {
+        expect(metrics.eyeAsymmetryPercent, closeTo(0, 1e-9));
+        expect(metrics.eyeDistanceRatio, closeTo(1, 1e-9));
+      },
+    );
 
     test('thirds split 30 / 15 / 75 across a 120-unit face', () {
       expect(metrics.upperThirdFraction, closeTo(30 / 120, 1e-9));
@@ -60,8 +62,13 @@ void main() {
     });
 
     test('ratios are scale invariant', () {
-      final RawFaceMetrics big = service.measure(scaledMesh(syntheticFace(), 3.7));
-      expect(big.eyeAsymmetryPercent, closeTo(metrics.eyeAsymmetryPercent, 1e-9));
+      final RawFaceMetrics big = service.measure(
+        scaledMesh(syntheticFace(), 3.7),
+      );
+      expect(
+        big.eyeAsymmetryPercent,
+        closeTo(metrics.eyeAsymmetryPercent, 1e-9),
+      );
       expect(big.upperToMiddleRatio, closeTo(metrics.upperToMiddleRatio, 1e-9));
       expect(big.lowerToMiddleRatio, closeTo(metrics.lowerToMiddleRatio, 1e-9));
       expect(big.jawAngleDegrees, closeTo(metrics.jawAngleDegrees, 1e-9));
@@ -71,7 +78,6 @@ void main() {
       final report = engine.build(metrics);
       for (final score in <double>[
         report.overallScore,
-        report.potentialScore,
         for (final m in report.metrics) m.score,
       ]) {
         expect(score.isFinite, isTrue);

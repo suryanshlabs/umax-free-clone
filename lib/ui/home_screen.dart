@@ -5,11 +5,11 @@ import 'package:provider/provider.dart';
 
 import '../data/scan_history.dart';
 import 'analyze_source_sheet.dart';
+import 'bmi_calculator_screen.dart';
 import 'compare_screen.dart';
 import 'error_logs_screen.dart';
 import 'home_widgets.dart';
 import 'home_widgets_tiles.dart';
-import 'multiangle_scan_sheet.dart';
 import 'profile_input_sheet.dart';
 import 'theme.dart';
 import 'wiki/wiki_screen.dart';
@@ -40,8 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Every entry point into Face Analyze goes through the same sheet, so the
   /// camera is a deliberate choice rather than the only way in.
   Future<void> _startAnalyze() async {
-    // Optional profile first: saved when filled, skipped gracefully when not.
-    // Either way the scan continues with baseline advice if BMI is unknown.
+    // Optional gender first: answering or skipping changes nothing in the
+    // measurement pipeline. The scan never asks for height, weight or age.
     await showProfileInputSheet(context);
     if (!mounted) {
       return;
@@ -51,6 +51,34 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     await startFaceAnalyze(context, source);
+  }
+
+  /// The multi-angle flow used to collect three photos and then show "No
+  /// reading" for every one of them, because the on-device detector only has a
+  /// frontal landmark model. Rather than present that as a feature, the tile
+  /// explains why it is unavailable.
+  void _explainMultiAngle() {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Multi-angle scan is not available'),
+        content: const Text(
+          'Measuring a profile angle needs a side-view landmark model, and the '
+          'on-device face mesh only describes a frontal face. The earlier '
+          'screen could only ever show "No reading", so it has been removed '
+          'rather than report a guessed angle.\n\nUse Face Analyze for the '
+          'three measurements this app can actually take.',
+          style: TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -77,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
             HomeModuleTile(
               icon: Icons.center_focus_strong_rounded,
               title: 'Face Analyze',
-              subtitle: 'Capture one photo and score your geometry',
+              subtitle: 'Capture one photo and measure your geometry',
               accent: AppColors.accent,
               highlight: true,
               trailing: 'START',
@@ -85,11 +113,20 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
             HomeModuleTile(
+              icon: Icons.monitor_weight_outlined,
+              title: 'BMI Calculator',
+              subtitle:
+                  'Separate tool: height, weight and age. Never used in face analysis',
+              accent: AppColors.amber,
+              onTap: () => _push(const BmiCalculatorScreen()),
+            ),
+            const SizedBox(height: 12),
+            HomeModuleTile(
               icon: Icons.compare_arrows_rounded,
               title: 'Multi-Angle Profile Scan',
-              subtitle: 'Front, left and right profiles in one flow',
-              accent: AppColors.mint,
-              onTap: () => _push(const MultiAngleScanSheet()),
+              subtitle: 'Not available: needs a profile landmark model',
+              accent: AppColors.textTertiary,
+              onTap: _explainMultiAngle,
             ),
             const SizedBox(height: 12),
             HomeModuleTile(
@@ -105,9 +142,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
             HomeModuleTile(
-              icon: Icons.sports_kabaddi_rounded,
-              title: 'Friend VS Mode',
-              subtitle: 'Two faces, head to head, same ruler',
+              icon: Icons.compare_rounded,
+              title: 'Compare Reports',
+              subtitle: 'Two saved or imported reports, side by side',
               accent: AppColors.amber,
               onTap: () => _push(const CompareScreen(mode: CompareMode.versus)),
             ),
@@ -115,7 +152,8 @@ class _HomeScreenState extends State<HomeScreen> {
             HomeModuleTile(
               icon: Icons.menu_book_rounded,
               title: 'Profile Encyclopedia',
-              subtitle: 'Four offline sections: growth, symmetry, body comp, skin & hair',
+              subtitle:
+                  'Four offline sections: growth, symmetry, body comp, skin & hair',
               accent: AppColors.accentSoft,
               onTap: () => _push(const EncyclopaediaScreen()),
             ),

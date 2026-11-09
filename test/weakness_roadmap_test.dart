@@ -13,7 +13,7 @@ void main() {
     );
 
     expect(report.coreWeakness.metricId, MetricId.jawline);
-    expect(report.coreWeakness.title, 'Jawline angularity');
+    expect(report.coreWeakness.title, 'Chin angle');
     expect(report.coreWeakness.score, report.metric(MetricId.jawline).score);
     expect(
       report.coreWeakness.rawValue,
@@ -96,7 +96,7 @@ void main() {
         .coreWeakness;
 
     expect(insight.why, contains(insight.title));
-    expect(insight.why, contains('bone'));
+    expect(insight.why, contains('not as a defect'));
     expect(insight.scoreText, isNotEmpty);
     expect(int.tryParse(insight.scoreText), isNotNull);
   });

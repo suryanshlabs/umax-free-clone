@@ -161,15 +161,21 @@ class FaceMeshReader implements FaceMeshSource {
     // non-critical point; demanding every single index turned those scans
     // into a false "no reading" even though the face was fully measured.
     const Set<int> needed = <int>{
+      FaceLandmarks.nasion,
       FaceLandmarks.noseBridge,
-      FaceLandmarks.leftEyeCorner,
-      FaceLandmarks.rightEyeCorner,
+      FaceLandmarks.leftEyeOuter,
+      FaceLandmarks.rightEyeOuter,
+      FaceLandmarks.leftEyeInner,
+      FaceLandmarks.rightEyeInner,
+      FaceLandmarks.mouthLeft,
+      FaceLandmarks.mouthRight,
       FaceLandmarks.chin,
       FaceLandmarks.jawEdgeLeft,
       FaceLandmarks.jawEdgeRight,
       FaceLandmarks.foreheadTop,
       FaceLandmarks.glabella,
-      FaceLandmarks.noseBase,
+      FaceLandmarks.noseWingLeft,
+      FaceLandmarks.noseWingRight,
       FaceLandmarks.faceEdgeLeft,
       FaceLandmarks.faceEdgeRight,
     };

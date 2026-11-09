@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/error_logger.dart';
+import '../core/image_store.dart';
 import '../ml/face_mesh_source.dart';
 import '../ml/photo_prep.dart';
 import '../state/analysis_controller.dart';
@@ -66,6 +67,9 @@ class _ProcessingScreenState extends State<ProcessingScreen>
       }
       if (path != widget.imagePath) {
         setState(() => _displayPath = path);
+        // The prepared square replaces the capture; drop the picker/camera
+        // copy so a scan leaves one file on the device, not two.
+        unawaited(ImageStore.deleteTemporarySource(widget.imagePath));
       }
 
       await controller.analyse(path);
@@ -95,7 +99,9 @@ class _ProcessingScreenState extends State<ProcessingScreen>
       }
       _stepTimer?.cancel();
       if (controller.phase != AnalysisPhase.failed) {
-        controller.failWithMessage('Analysis failed (${error.runtimeType}): $error');
+        controller.failWithMessage(
+          'Analysis failed (${error.runtimeType}): $error',
+        );
       }
     }
   }

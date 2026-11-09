@@ -1,10 +1,13 @@
 import '../core/metrics.dart';
 import '../core/report.dart';
-import '../core/user_profile.dart';
 
 export 'scan_history_store.dart';
 
 /// One scored measurement, flattened for storage.
+///
+/// A saved measurement is geometry only. Older files also carried age, gender
+/// and BMI copies on each metric; those keys are ignored on read and are no
+/// longer written, so a scan can never carry body-composition data again.
 class SavedMetric {
   const SavedMetric({
     required this.id,
@@ -12,9 +15,6 @@ class SavedMetric {
     required this.rawValue,
     required this.score,
     this.rawNumber,
-    this.gender,
-    this.age,
-    this.bmi,
   });
 
   final MetricId id;
@@ -22,9 +22,6 @@ class SavedMetric {
   final String rawValue;
   final double score;
   final double? rawNumber;
-  final Gender? gender;
-  final int? age;
-  final double? bmi;
 
   /// `%`, `°`, or empty for the unitless thirds index.
   String get unit => switch (id) {
@@ -33,14 +30,8 @@ class SavedMetric {
     MetricId.facialThirds => '',
   };
 
-  /// The same qualitative bands the live dashboard uses.
-  String get scoreLabel {
-    if (score >= 85) return 'Excellent';
-    if (score >= 72) return 'Strong';
-    if (score >= 58) return 'Balanced';
-    if (score >= 42) return 'Room to grow';
-    return 'Focus area';
-  }
+  /// The same agreement band the live dashboard uses.
+  String get scoreLabel => ReportBand.fromScore(score).label;
 
   factory SavedMetric.fromMetric(MetricResult metric, {double? rawNumber}) {
     return SavedMetric(
@@ -58,9 +49,6 @@ class SavedMetric {
     'raw': rawValue,
     'score': score,
     'number': rawNumber,
-    'gender': gender?.name,
-    'age': age,
-    'bmi': bmi,
   };
 
   static SavedMetric? fromJson(Object? json) {
@@ -82,30 +70,14 @@ class SavedMetric {
     final Object? title = json['title'];
     final Object? rawValue = json['raw'];
     final Object? rawNumber = json['number'];
-    final Object? rawGender = json['gender'];
-    final Object? rawAge = json['age'];
-    final Object? rawBmi = json['bmi'];
     return SavedMetric(
       id: metricId,
       title: title is String && title.isNotEmpty ? title : metricId.name,
       rawValue: rawValue is String ? rawValue : '—',
       score: rawScore.toDouble(),
       rawNumber: rawNumber is num ? rawNumber.toDouble() : null,
-      gender: rawGender is String ? genderFromName(rawGender) : null,
-      age: rawAge is int ? rawAge : null,
-      bmi: rawBmi is num ? rawBmi.toDouble() : null,
     );
   }
-
-}
-
-Gender? genderFromName(String name) {
-  for (final Gender g in Gender.values) {
-    if (g.name == name) {
-      return g;
-    }
-  }
-  return null;
 }
 
 /// A completed analysis, small enough to keep dozens of.
@@ -114,27 +86,26 @@ class SavedScan {
     required this.id,
     required this.createdAt,
     required this.overallScore,
-    required this.grade,
     required this.metrics,
     this.warnings = const <String>[],
     this.imagePath,
-    this.potentialScore,
     this.title,
     this.isFriend = false,
-    this.profile,
   });
 
   final String id;
   final DateTime createdAt;
   final double overallScore;
-  final String grade;
   final List<SavedMetric> metrics;
   final List<String> warnings;
   final String? imagePath;
-  final double? potentialScore;
   final String? title;
   final bool isFriend;
-  final UserProfile? profile;
+
+  /// Agreement band, derived from the stored score. Older files carried a
+  /// `grade` string; it is ignored so a retired rating can never resurface in
+  /// history, which keeps the wording consistent with the current app.
+  String get bandLabel => ReportBand.fromScore(overallScore).label;
 
   factory SavedScan.fromReport(AnalysisReport report) {
     final RawFaceMetrics raw = report.raw;
@@ -142,8 +113,6 @@ class SavedScan {
       id: report.createdAt.microsecondsSinceEpoch.toString(),
       createdAt: report.createdAt,
       overallScore: report.overallScore,
-      grade: report.grade,
-      potentialScore: report.potentialScore,
       metrics: <SavedMetric>[
         for (final MetricResult metric in report.metrics)
           SavedMetric.fromMetric(
@@ -157,7 +126,6 @@ class SavedScan {
       ],
       warnings: report.qualityWarnings,
       imagePath: report.imagePath,
-      profile: report.profile,
     );
   }
 
@@ -173,27 +141,21 @@ class SavedScan {
     String? id,
     DateTime? createdAt,
     double? overallScore,
-    String? grade,
     List<SavedMetric>? metrics,
     List<String>? warnings,
     String? imagePath,
-    double? potentialScore,
     String? title,
     bool? isFriend,
-    UserProfile? profile,
   }) {
     return SavedScan(
       id: id ?? this.id,
       createdAt: createdAt ?? this.createdAt,
       overallScore: overallScore ?? this.overallScore,
-      grade: grade ?? this.grade,
       metrics: metrics ?? this.metrics,
       warnings: warnings ?? this.warnings,
       imagePath: imagePath ?? this.imagePath,
-      potentialScore: potentialScore ?? this.potentialScore,
       title: title ?? this.title,
       isFriend: isFriend ?? this.isFriend,
-      profile: profile ?? this.profile,
     );
   }
 
@@ -212,24 +174,15 @@ class SavedScan {
     return null;
   }
 
+  /// No `profile` key: a scan record holds geometry, not body composition. The
+  /// older `profile` key in an existing file is ignored rather than migrated
+  /// onto a new scan.
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'at': createdAt.toIso8601String(),
     'score': overallScore,
-    'grade': grade,
-    'potential': potentialScore,
     'title': title,
     'friend': isFriend,
-    'profile': profile == null
-        ? null
-        : <String, Object?>{
-            'gender': profile?.gender.name,
-            'age': profile?.age,
-            'heightCm': profile?.heightCm,
-            'weightKg': profile?.weightKg,
-            'heightKnown': profile?.heightKnown,
-            'weightKnown': profile?.weightKnown,
-          },
     'metrics': <Object?>[
       for (final SavedMetric metric in metrics) metric.toJson(),
     ],
@@ -264,42 +217,15 @@ class SavedScan {
       return null;
     }
     final Object? rawWarnings = json['warnings'];
-    final Object? rawGrade = json['grade'];
     final Object? rawImage = json['image'];
-    final Object? rawPotential = json['potential'];
     final Object? rawTitle = json['title'];
     final Object? rawFriend = json['friend'];
-    final Object? rawProfile = json['profile'];
-    UserProfile? profile;
-    if (rawProfile is Map) {
-      final Gender? gender = rawProfile['gender'] is String
-          ? genderFromName(rawProfile['gender'] as String)
-          : null;
-      final int? age = rawProfile['age'] is int ? rawProfile['age'] as int : null;
-      final double? heightCm = rawProfile['heightCm'] is double
-          ? rawProfile['heightCm'] as double
-          : (rawProfile['heightCm'] is num ? (rawProfile['heightCm'] as num).toDouble() : null);
-      final double? weightKg = rawProfile['weightKg'] is double
-          ? rawProfile['weightKg'] as double
-          : (rawProfile['weightKg'] is num ? (rawProfile['weightKg'] as num).toDouble() : null);
-      final bool heightKnown = rawProfile['heightKnown'] == true;
-      final bool weightKnown = rawProfile['weightKnown'] == true;
-      profile = UserProfile(
-        gender: gender ?? Gender.other,
-        age: age ?? 0,
-        heightCm: heightKnown ? heightCm : null,
-        weightKg: weightKnown ? weightKg : null,
-        heightKnown: heightKnown,
-        weightKnown: weightKnown,
-      );
-    }
     return SavedScan(
       id: json['id'] is String
           ? json['id']! as String
           : createdAt.microsecondsSinceEpoch.toString(),
       createdAt: createdAt,
       overallScore: rawScore.toDouble(),
-      grade: rawGrade is String ? rawGrade : 'Measured',
       metrics: metrics,
       warnings: rawWarnings is List
           ? <String>[
@@ -308,12 +234,10 @@ class SavedScan {
             ]
           : const <String>[],
       imagePath: rawImage is String ? rawImage : null,
-      potentialScore: rawPotential is num ? rawPotential.toDouble() : null,
       title: rawTitle is String && rawTitle.trim().isNotEmpty
           ? rawTitle.trim()
           : null,
       isFriend: rawFriend == true,
-      profile: profile,
     );
   }
 
@@ -321,8 +245,18 @@ class SavedScan {
 
   static String _month(int month) {
     const List<String> names = <String>[
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return names[(month - 1).clamp(0, 11)];
   }

@@ -1,14 +1,14 @@
 import 'metrics.dart';
-import 'user_profile.dart';
 
-/// The three scored categories.
+/// The three measured categories. These are measurements, not judgements: the
+/// app reports how close each one is to a stated reference.
 enum MetricId { eyeSymmetry, jawline, facialThirds }
 
 /// How much weight to give a piece of advice, in plain language.
 ///
 /// Deliberately coarse. The app should never imply more certainty than the
-/// literature has, and "mewing reshapes adult bone" and "fat loss reveals the
-/// jawline" belong at opposite ends of this scale.
+/// literature has, and "mewing reshapes adult bone" and "this is how the mesh
+/// was scaled" belong at opposite ends of this scale.
 enum EvidenceStrength {
   strong('Strong evidence'),
   moderate('Moderate evidence'),
@@ -20,7 +20,7 @@ enum EvidenceStrength {
   final String label;
 }
 
-/// One actionable suggestion with the reasoning attached.
+/// One informational note with the reasoning and its evidence level attached.
 class AdviceItem {
   const AdviceItem({
     required this.title,
@@ -33,7 +33,60 @@ class AdviceItem {
   final EvidenceStrength evidence;
 }
 
-/// A scored category with its raw measurement and generated advice.
+/// Where a combined agreement value sits, described as agreement with the
+/// app's reference bands rather than as a rating of the person.
+enum ReportBand {
+  close('Close', 'Close to the reference bands'),
+  near('Near', 'Mostly inside the reference bands'),
+  mixed('Mixed', 'Mixed agreement with the reference bands'),
+  deviated('Deviated', 'Several measurements outside their reference bands'),
+  far('Far', 'Large departures from the reference bands');
+
+  const ReportBand(this.label, this.description);
+
+  /// Short form, safe for chips and list tiles.
+  final String label;
+
+  /// One line for a results header.
+  final String description;
+
+  static ReportBand fromScore(double score) {
+    if (score >= 85) return ReportBand.close;
+    if (score >= 72) return ReportBand.near;
+    if (score >= 58) return ReportBand.mixed;
+    if (score >= 42) return ReportBand.deviated;
+    return ReportBand.far;
+  }
+
+  /// Explains the band without implying a verdict on appearance, and without
+  /// promising that a lower band can be "fixed".
+  String get explanation => switch (this) {
+    ReportBand.close =>
+      'All three measurements sit close to the references this app uses. That '
+          'is a statement about the geometry in this photo, not a ranking of '
+          'how you look.',
+    ReportBand.near =>
+      'Two measurements sit close to the reference and one carries most of the '
+          'difference. Treat the individual measurements below as the useful '
+          'detail; the combined number is only their weighted mean.',
+    ReportBand.mixed =>
+      'The measurements disagree with each other. That is common and is often '
+          'dominated by the photo rather than the face: head angle, focal '
+          'length and hairline placement all move these numbers.',
+    ReportBand.deviated =>
+      'Two or more measurements are outside the references this app uses. '
+          'Check the capture conditions first - a turned or tilted head can '
+          'produce this on any face - then compare your own scans over time '
+          'rather than against the number.',
+    ReportBand.far =>
+      'The measurements are far from the references. In practice this is '
+          'usually a capture problem: an extreme angle, a partial face, or a '
+          'hairline the mesh could not see. Re-scan before reading anything '
+          'into it.',
+  };
+}
+
+/// A measured category with its raw measurement and neutral notes.
 class MetricResult {
   const MetricResult({
     required this.id,
@@ -54,7 +107,7 @@ class MetricResult {
   /// The formatted measurement itself, e.g. "1.8%".
   final String rawValue;
 
-  /// 0-100.
+  /// 0-100 agreement with the stated reference. Not an attractiveness score.
   final double score;
 
   /// One sentence explaining what the number is and what it means here.
@@ -62,18 +115,12 @@ class MetricResult {
 
   final List<AdviceItem> advice;
 
-  /// Qualitative band, used for colour and for the score chip.
-  String get scoreLabel {
-    if (score >= 85) return 'Excellent';
-    if (score >= 72) return 'Strong';
-    if (score >= 58) return 'Balanced';
-    if (score >= 42) return 'Room to grow';
-    return 'Focus area';
-  }
+  /// Qualitative band, used for colour and for the measurement chip.
+  String get scoreLabel => ReportBand.fromScore(score).label;
 }
 
-/// When a roadmap step happens. Chronological by declaration order, so the list
-/// can be sorted by `index` and always reads as a plan rather than a wish list.
+/// When a measurement note applies. Chronological by declaration order, so the
+/// list can be sorted by `index` and always reads as a sequence.
 enum RoadmapStage {
   now('Now'),
   weeks1to2('Weeks 1–2'),
@@ -85,7 +132,7 @@ enum RoadmapStage {
   final String label;
 }
 
-/// One scheduled corrective routine on the weakness roadmap.
+/// One scheduled observation or capture routine.
 class RoadmapStep {
   const RoadmapStep({
     required this.stage,
@@ -97,17 +144,19 @@ class RoadmapStep {
   final RoadmapStage stage;
   final String title;
 
-  /// What to actually do, with the reasoning and the limits of the evidence.
+  /// What to do, with the reasoning and the limits of the evidence.
   final String detail;
 
   final EvidenceStrength evidence;
 }
 
-/// The weakest measurement, promoted out of the list and turned into a plan.
+/// The measurement furthest from its reference, promoted out of the list.
 ///
-/// "Core weakness" is this app's own framing, not a clinical finding: it is
-/// simply the measurement contributing least to the weighted total, which is
-/// where a change moves the overall number most.
+/// "Lowest agreement" is this app's own framing, not a clinical finding: it is
+/// simply the measurement contributing least to the weighted mean, which is
+/// where a change in the *measurement* would move the combined number most. It
+/// is not a defect, and a low value is frequently the photo rather than the
+/// face.
 class WeaknessInsight {
   const WeaknessInsight({
     required this.metricId,
@@ -123,15 +172,13 @@ class WeaknessInsight {
   final String title;
   final double score;
 
-  /// The formatted measurement behind the score, e.g. "4.1%".
+  /// The formatted measurement behind the value, e.g. "4.1%".
   final String rawValue;
 
-  /// Points between this measurement and the next-weakest one. A large gap
-  /// means the face is genuinely uneven; a small one means all three are in the
-  /// same band and nothing dominates.
+  /// Points between this measurement and the next-lowest one.
   final double gapToNextBest;
 
-  /// Two or three sentences tying the number to a cause and a lever.
+  /// Two or three sentences tying the number to how it was measured.
   final String why;
 
   /// Ordered `Now` → `Week 5+`. Never empty for a real report.
@@ -139,8 +186,8 @@ class WeaknessInsight {
 
   String get scoreText => score.toStringAsFixed(0);
 
-  /// True when the metric is far enough below the others that calling it *the*
-  /// weakness is fair rather than an artefact of noise.
+  /// True when the measurement is far enough below the others that singling it
+  /// out is meaningful rather than noise.
   bool get isClearlyWeakest => gapToNextBest >= 4;
 
   List<RoadmapStep> stepsFor(RoadmapStage stage) => <RoadmapStep>[
@@ -149,15 +196,11 @@ class WeaknessInsight {
   ];
 }
 
-/// The complete output of one analysis: scores, advice, and the conditions the
-/// measurement was taken under.
+/// The complete output of one analysis: measurements, notes, and the conditions
+/// they were taken under.
 class AnalysisReport {
   const AnalysisReport({
     required this.overallScore,
-    required this.potentialScore,
-    required this.potentialGain,
-    required this.grade,
-    required this.gradeBlurb,
     required this.metrics,
     required this.coreWeakness,
     required this.raw,
@@ -165,44 +208,41 @@ class AnalysisReport {
     required this.createdAt,
     this.safetyNote,
     this.imagePath,
-    this.profile,
   });
 
-  /// Strict geometric baseline: the weighted mean of the three measurements.
+  /// Weighted mean of the three agreement values. Kept as a single number for
+  /// trend tracking only; the per-measurement values are the honest detail.
   final double overallScore;
 
-  /// The projection: the baseline plus the calibration's projection bonus,
-  /// sized by how much headroom the two weakest measurements have.
-  final double potentialScore;
-
-  /// `potentialScore - overallScore`, in score points. Between
-  /// [AnalysisCalibration.potentialMinGain] and
-  /// [AnalysisCalibration.potentialMaxGain] unless the scale's ceiling of 100 is
-  /// closer than the bonus.
-  final double potentialGain;
-
-  final String grade;
-  final String gradeBlurb;
   final List<MetricResult> metrics;
 
-  /// The lowest-scoring measurement, with its chronological roadmap.
+  /// The measurement furthest from its reference, with observation steps.
   final WeaknessInsight coreWeakness;
 
   final RawFaceMetrics raw;
 
-  /// Conditions that make the numbers less trustworthy (head turned, tilted).
+  /// Conditions that make the numbers less trustworthy (head turned, tilted,
+  /// partial mesh).
   final List<String> qualityWarnings;
 
-  /// Present only when the asymmetry reading is large enough that "if this is
+  /// Present only when the asymmetry residual is large enough that "if this is
   /// new, see a doctor" is the responsible thing to say.
   final String? safetyNote;
 
   final DateTime createdAt;
   final String? imagePath;
 
-  /// Optional on-device profile (gender/age/height/weight) used to
-  /// personalise body-composition advice. Null when skipped.
-  final UserProfile? profile;
+  /// Agreement band for [overallScore].
+  ReportBand get band => ReportBand.fromScore(overallScore);
+
+  /// Short band name for headers and history chips.
+  String get bandLabel => band.label;
+
+  /// One-line explanation of the band.
+  String get bandNote => band.description;
+
+  /// Longer, non-judgemental explanation.
+  String get bandExplanation => band.explanation;
 
   MetricResult metric(MetricId id) => metrics.firstWhere(
     (MetricResult metric) => metric.id == id,
@@ -213,23 +253,14 @@ class AnalysisReport {
 
   String get overallText => overallScore.toStringAsFixed(0);
 
-  String get potentialText => potentialScore.toStringAsFixed(0);
-
-  String get potentialGainText => '+${potentialGain.toStringAsFixed(0)}';
-
-  /// True when there is headroom worth showing. A face already at the top of the
-  /// scale gains almost nothing, and pretending otherwise would be dishonest.
-  bool get hasMeaningfulPotential => potentialGain >= 1;
-
   /// Plain-text summary for the clipboard / messaging apps.
   String toShareText() {
     final StringBuffer buffer = StringBuffer()
-      ..writeln('Facial geometry analysis — ${_formatDate(createdAt)}')
-      ..writeln('Overall: $overallText/100 ($grade)')
-      ..writeln('Potential: $potentialText/100 ($potentialGainText)')
+      ..writeln('Facial geometry measurements — ${_formatDate(createdAt)}')
+      ..writeln('Combined agreement: $overallText/100 ($bandLabel)')
       ..writeln()
       ..writeln(
-        'Core weakness: ${coreWeakness.title} '
+        'Lowest agreement: ${coreWeakness.title} '
         '(${coreWeakness.scoreText}/100, ${coreWeakness.rawValue})',
       );
     for (final RoadmapStep step in coreWeakness.steps) {
@@ -240,15 +271,16 @@ class AnalysisReport {
     buffer.writeln();
     for (final MetricResult metric in metrics) {
       buffer.writeln(
-        '${metric.title}: ${metric.score.toStringAsFixed(0)}/100 '
+        '${metric.title}: ${metric.score.toStringAsFixed(0)}/100 agreement '
         '(${metric.measurementLabel} ${metric.rawValue})',
       );
     }
     buffer
       ..writeln()
       ..write(
-        'Measured on-device from 468 MediaPipe Face Mesh landmarks. '
-        'Geometric estimate, not a medical or attractiveness assessment.',
+        'Measured on-device from 468 MediaPipe Face Mesh landmarks. These are '
+        'geometric agreements with stated references, not a medical or '
+        'attractiveness assessment.',
       );
     return buffer.toString();
   }

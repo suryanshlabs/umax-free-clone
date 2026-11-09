@@ -4,60 +4,96 @@
 /// client (Android, iOS, Python, JavaScript) receives the same numbering, so
 /// these constants are stable across platform SDK versions.
 ///
-/// Reference: the canonical face model (canonical_face_model.obj) that ships
-/// with MediaPipe. Index 0 is the right-hand edge of the face oval near the ear;
-/// the numbering then walks the contours in order.
+/// Reference: the canonical face model (`canonical_face_model.obj`) shipped in
+/// `mediapipe/modules/face_geometry/data`. The indices below are the ones used
+/// by MediaPipe's own iris and face-geometry modules; the comments record what
+/// each point is, because a single wrong index silently corrupts every
+/// measurement downstream.
+///
+/// Coordinate note: the mesh is in image space. "Left" and "right" below mean
+/// the subject's own sides, which appear mirrored in a front camera selfie.
 abstract final class FaceLandmarks {
   /// Number of landmarks in a complete MediaPipe Face Mesh.
   static const int requiredCount = 468;
 
-  /// Nose bridge, directly between the eyes. Used as the midline anchor.
+  // ---- Midline ---------------------------------------------------------
+
+  /// Nasion: the midline dip between the eyebrows, top of the nose bridge.
+  /// This is the anchor the midline is built from; it is far more stable than
+  /// the nose tip and does not move with a smile.
+  static const int nasion = 168;
+
+  /// Upper nose bridge, just below the nasion. Kept for reference; the midline
+  /// uses [nasion] because it is the documented anatomical point.
   static const int noseBridge = 1;
+
+  /// Glabella: the midline point between the eyebrows, used as the boundary
+  /// between the upper and middle thirds.
+  static const int glabella = 9;
 
   /// Top centre of the forehead, at the hairline.
   static const int foreheadTop = 10;
 
-  /// Glabella: the point between the eyebrows.
-  static const int glabella = 9;
-
-  /// Upper nose bridge / radix, just below the glabella.
-  ///
-  /// This is the landmark the brief calls the "nose base". See
-  /// [noseBaseAlternative] for the anatomically lower option.
-  static const int noseBase = 2;
-
-  /// Bottom of the nose (subnasale), midway between the two nostril wings
-  /// ([noseWingLeft], [noseWingRight]). Available if you prefer to measure the
-  /// middle third down to the true base of the nose instead of the radix.
-  static const int noseBaseAlternative =
-      -1; // resolved from the two wings below
-
-  /// Left nostril wing.
-  static const int noseWingLeft = 94;
-
-  /// Right nostril wing.
-  static const int noseWingRight = 195;
-
   /// Bottom of the chin (menton).
   static const int chin = 152;
 
-  /// Outer corner of the subject's left eye (viewer's right in a selfie).
-  static const int leftEyeCorner = 33;
+  // ---- Nose base -------------------------------------------------------
 
-  /// Outer corner of the subject's right eye (viewer's left in a selfie).
-  static const int rightEyeCorner = 263;
+  /// Left nostril wing (alare).
+  static const int noseWingLeft = 94;
 
-  /// Jaw edge on one side, between the ramus and the chin.
-  static const int jawEdgeLeft = 172;
+  /// Right nostril wing (alare).
+  static const int noseWingRight = 195;
 
-  /// Jaw edge on the mirrored side.
-  static const int jawEdgeRight = 397;
+  // ---- Eyes ------------------------------------------------------------
 
-  /// Left-most point of the face oval at cheekbone height.
+  /// Outer corner of the subject's left eye.
+  static const int leftEyeOuter = 33;
+
+  /// Outer corner of the subject's right eye.
+  static const int rightEyeOuter = 263;
+
+  /// Inner corner of the subject's left eye (tear duct area).
+  static const int leftEyeInner = 133;
+
+  /// Inner corner of the subject's right eye.
+  static const int rightEyeInner = 362;
+
+  // ---- Mouth -----------------------------------------------------------
+
+  /// Left mouth corner.
+  static const int mouthLeft = 61;
+
+  /// Right mouth corner.
+  static const int mouthRight = 291;
+
+  // ---- Face oval -------------------------------------------------------
+
+  /// Face-oval point level with the cheekbone on the subject's left side.
   static const int faceEdgeLeft = 234;
 
-  /// Right-most point of the face oval at cheekbone height.
+  /// Face-oval point level with the cheekbone on the subject's right side.
   static const int faceEdgeRight = 454;
+
+  /// Jaw contour point on the subject's left side, between the ramus and chin.
+  static const int jawEdgeLeft = 172;
+
+  /// Jaw contour point on the subject's right side, mirrored from [jawEdgeLeft].
+  static const int jawEdgeRight = 397;
+
+  /// The mirrored landmark pairs used to measure asymmetry.
+  ///
+  /// Each pair sits at the same anatomical place on opposite sides of the
+  /// midline, so a perfectly symmetrical, level, frontal face puts both points
+  /// the same distance from the midline. Pairs are deliberately from four
+  /// different regions: a camera or lighting artefact usually affects one
+  /// region, while real asymmetry tends to show in several.
+  static const List<(int, int)> symmetryPairs = <(int, int)>[
+    (leftEyeOuter, rightEyeOuter),
+    (leftEyeInner, rightEyeInner),
+    (mouthLeft, mouthRight),
+    (faceEdgeLeft, faceEdgeRight),
+  ];
 }
 
 /// The ideal share of total face height for each third (1 : 1 : 1).

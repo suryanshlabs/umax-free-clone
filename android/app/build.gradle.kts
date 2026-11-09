@@ -19,6 +19,8 @@ android {
         // ML Kit Face Mesh Detection needs API 21 or newer; Flutter's own default
         // minimum is already above that, so the framework value is kept.
         minSdk = flutter.minSdkVersion
+        // MediaPipe Tasks Vision requires minSdk 28 or higher.
+        minSdk = 28
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configuring-apk-splits#configure-APK-versions)
@@ -57,3 +59,5 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+

@@ -12,11 +12,12 @@ import 'home_widgets.dart';
 import 'home_widgets_tiles.dart';
 import 'profile_input_sheet.dart';
 import 'theme.dart';
+import 'media_pipe_face_scan_screen.dart';
 import 'wiki/wiki_screen.dart';
 import 'wiki_screen.dart';
 
-/// The hub. Modules, one primary action, and the last score kept visible so
-/// the app opens with something useful instead of a live camera view.
+/// The hub. Modules, one primary action, and the last score kept visible
+/// so the app opens with something useful instead of a live camera view.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -67,7 +68,8 @@ class _HomeScreenState extends State<HomeScreen> {
           'Measuring a profile angle needs a side-view landmark model, and the '
           'on-device face mesh only describes a frontal face. The earlier '
           'screen could only ever show "No reading", so it has been removed '
-          'rather than report a guessed angle.\n\nUse Face Analyze for the '
+          'rather than report a guessed angle.\n\n'
+          'Use Face Analyze for the '
           'three measurements this app can actually take.',
           style: TextStyle(fontSize: 13, height: 1.5),
         ),
@@ -173,6 +175,14 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle: 'On-device crash and error log — copy, share or clear',
               accent: AppColors.danger,
               onTap: () => _push(const ErrorLogsScreen()),
+            ),
+            const SizedBox(height: 12),
+            HomeModuleTile(
+              icon: Icons.face_rounded,
+              title: 'MediaPipe Face Scan',
+              subtitle: 'Three-view facial geometry analysis',
+              accent: AppColors.accentSoft,
+              onTap: () => _push(const MediaPipeFaceScanScreen()),
             ),
             const SizedBox(height: 30),
             const HomePrivacyFooter(),

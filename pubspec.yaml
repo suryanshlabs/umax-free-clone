@@ -4,7 +4,7 @@ description: >-
   runs on the device through ML Kit; every measurement and score is computed
   locally in Dart. No network calls, no accounts, no uploads.
 publish_to: "none"
-version: 1.3.0+6
+version: 3.1.0+7
 
 environment:
   sdk: ^3.9.0
@@ -20,12 +20,15 @@ dependencies:
   # production packaging of MediaPipe Face Mesh). Returns 468 3D landmarks.
   google_mlkit_face_mesh_detection: ^0.7.1
 
+  # Google MediaPipe Tasks Vision: official Flutter wrapper for Face Landmarker.
+  # The model (face_landmarker.task) is bundled at pub get time; never downloaded
+  # at runtime. See the package README for asset bundle instructions.
+  mediapipe_vision: ^0.1.3
+
   # Local state management for the analysis pipeline.
   provider: ^6.1.2
-
-  # Writes the saved-scan history to the app's private support directory; no
-  # storage permission is involved on any supported Android version.
-  path_provider: ^2.1.4
+  # vector_math is included transitively via mediapipe_vision, kept for explicitness.
+  vector_math: ^2.4.0
 
   # Gallery pick for the second input path. Uses Android's system picker, which
   # hands back a single user-chosen file and needs no storage permission.
@@ -40,4 +43,6 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 flutter:
-  uses-material-design: true
+  uses-material-design: true  # MediaPipe model assets are bundled at pub get time; the task file
+  # is provided with the application and not included in this workspace.
+  assets:

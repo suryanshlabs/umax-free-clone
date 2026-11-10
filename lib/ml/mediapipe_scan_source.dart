@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
 import '../core/error_logger.dart';
 import '../core/facial_analysis_service.dart';
@@ -365,10 +363,6 @@ class MediaPipeScanSource implements FaceMeshSource {
     }
     final double span = maxX - minX;
     return span.isFinite && span > 0 ? span * imageWidth : imageWidth;
-  }  static int _imageWidthFor(double aspect, int height) {
-    if (!aspect.isFinite || aspect <= 0 || height <= 0) return height;
-    final double w = height * aspect;
-    return w.isFinite ? w.round() : height;
   }
 
   /// Image geometry from the prepared file bytes.
@@ -430,12 +424,6 @@ class MediaPipeScanSource implements FaceMeshSource {
     return frame.image;
   }
 
-  /// Image geometry from the prepared file bytes.
-  @visibleForTesting
-  Future<_ImageGeometry> imageGeometry(Uint8List bytes) async {
-    final ExifOrientation orientation = readExifOrientation(bytes);
-    return _geometry(bytes, orientation);
-  }
 }
 
 /// The on-device geometry of a prepared image.

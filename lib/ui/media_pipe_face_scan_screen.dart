@@ -635,7 +635,7 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
               children: <Widget>[
                 Text(
                   allAccepted ? 'Scan Complete' : 'Scan Incomplete',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
@@ -1194,12 +1194,12 @@ class _StripStep extends StatelessWidget {
             width: 12,
             height: 12,
             child: done
-                ? DecoratedBox(
+                ? const DecoratedBox(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: AppColors.mint,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.check_rounded,
                       size: 9,
                       color: AppColors.background,

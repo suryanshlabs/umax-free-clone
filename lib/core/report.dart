@@ -1,3 +1,4 @@
+import 'look_improvements.dart';
 import 'metrics.dart';
 
 /// The three measured categories. These are measurements, not judgements: the
@@ -251,6 +252,13 @@ class AnalysisReport {
 
   bool get isReliable => qualityWarnings.isEmpty;
 
+  /// Practical levers that change how a face reads, grouped by area, with a
+  /// short set aimed at the lowest-agreement measurement.
+  ///
+  /// Derived from [metrics] rather than stored, so old scans get the same plan
+  /// and nothing has to be migrated.
+  LookImprovementPlan get improvements => LookImprovementPlan.forMetrics(metrics);
+
   String get overallText => overallScore.toStringAsFixed(0);
 
   /// Plain-text summary for the clipboard / messaging apps.
@@ -274,6 +282,18 @@ class AnalysisReport {
         '${metric.title}: ${metric.score.toStringAsFixed(0)}/100 agreement '
         '(${metric.measurementLabel} ${metric.rawValue})',
       );
+    }
+    final LookImprovementPlan plan = improvements;
+    buffer
+      ..writeln()
+      ..writeln('What can move this - ${plan.targetedArea}:');
+    for (final LookImprovement item in plan.targeted) {
+      buffer.writeln('  ${item.title}');
+    }
+    buffer.writeln();
+    buffer.writeln('What can move this - overall:');
+    for (final LookImprovement item in plan.overall) {
+      buffer.writeln('  ${item.title}');
     }
     buffer
       ..writeln()

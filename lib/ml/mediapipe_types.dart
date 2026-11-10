@@ -19,7 +19,10 @@ export 'package:mediapipe_vision/mediapipe_vision.dart'
 enum CaptureView { front, left34, right34, complete }
 
 /// Per-view scan status.
-enum ViewStatus { pending, capturing, analysing, accepted, rejected }
+///
+/// [captured] means the photo exists but MediaPipe has not read it yet: the
+/// session collects all three views first and runs detection once at the end.
+enum ViewStatus { pending, capturing, captured, analysing, accepted, rejected }
 
 /// The recorded output of one MediaPipe view scan.
 ///

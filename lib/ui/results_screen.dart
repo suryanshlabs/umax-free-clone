@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../core/look_improvements.dart';
 import '../core/report.dart';
 import '../core/umax_file.dart';
 import '../state/analysis_controller.dart';
@@ -49,6 +50,8 @@ class ResultsScreen extends StatelessWidget {
                   _ScoreCard(report: report),
                   const SizedBox(height: 16),
                   _WeaknessRoadmap(report: report),
+                  const SizedBox(height: 16),
+                  _LookImprovementsCard(report: report),
                   if (report.qualityWarnings.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 16),
                     _WarningCard(warnings: report.qualityWarnings),
@@ -707,6 +710,161 @@ class _WeaknessRoadmap extends StatelessWidget {
                 step: step,
               ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// "What can move this": the practical levers, overall and aimed at the
+/// lowest-agreement measurement.
+///
+/// Sits right under the lowest-agreement card because that is the point where
+/// the user is asking "so what do I do" - and the honest answer is grooming,
+/// light, sleep and camera position, not a promise about bone.
+class _LookImprovementsCard extends StatelessWidget {
+  const _LookImprovementsCard({required this.report});
+
+  final AnalysisReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final LookImprovementPlan plan = report.improvements;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.mint.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.mint.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Text(
+                  'WHAT CAN MOVE THIS',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                    color: AppColors.mint,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'How to improve your look',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.4,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            plan.headline,
+            style: const TextStyle(
+              fontSize: 11.5,
+              height: 1.6,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            plan.targetedArea.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.8,
+              color: AppColors.mint,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final LookImprovement item in plan.targeted)
+            _ImprovementTile(item: item),
+          const SizedBox(height: 18),
+          const Text(
+            'OVERALL',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.8,
+              color: AppColors.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final LookImprovement item in plan.overall)
+            _ImprovementTile(item: item),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImprovementTile extends StatelessWidget {
+  const _ImprovementTile({required this.item});
+
+  final LookImprovement item;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color evidence = evidenceColor(item.evidence);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            item.title,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            item.detail,
+            style: const TextStyle(
+              fontSize: 11.5,
+              height: 1.55,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: <Widget>[
+              Container(
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: evidence,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                item.evidence.label,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                  color: evidence,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

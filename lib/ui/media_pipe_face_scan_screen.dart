@@ -78,12 +78,33 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
   late final MediaPipeScanSource _scanner = MediaPipeScanSource();
   bool _scannerDisposed = false;
 
-  // The prepared square path of the currently analysed view, for the fade.
-  String? _currentPhotoPath;
-
-  // True while the last accepted view is handing over to the analysis screen,
-  // so the capture view is never swapped for the summary in between.
+  // True while the session is handing over to the analysis screen, so the
+  // capture view is never swapped for the summary in between.
   bool _navigationPending = false;
+
+  /// Where the session is: taking the three photos, reading them, or reporting
+  /// what went wrong.
+  _ScanPhase _phase = _ScanPhase.capturing;
+
+  /// The order the views are photographed and read in.
+  static const List<CaptureView> _captureOrder = <CaptureView>[
+    CaptureView.front,
+    CaptureView.left34,
+    CaptureView.right34,
+  ];
+
+  /// Raw camera file per view. Filled while capturing, replaced by the prepared
+  /// square once MediaPipe has read the view.
+  final Map<CaptureView, String> _shots = <CaptureView, String>{};
+
+  /// The view MediaPipe is reading right now, and how far the pass has got.
+  CaptureView? _analysingView;
+  int _analysedCount = 0;
+  int _analyseTotal = 3;
+
+  /// The view captured a moment ago, so the strip and the hint can confirm it
+  /// before the guide asks for the next angle.
+  CaptureView? _justCaptured;
 
   @override
   void initState() {
@@ -166,6 +187,9 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
     }
   }
 
+  /// How many times [initialize] is tried before the camera is called broken.
+  static const int _cameraAttempts = 3;
+
   Future<void> _startCamera() async {
     if (_cameras.isEmpty) {
       return;
@@ -177,52 +201,73 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
       });
     }
 
-    final CameraController controller = CameraController(
-      _cameras[_cameraIndex],
-      ResolutionPreset.veryHigh,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
+    // A failed first attempt is usually transient: on several Android builds
+    // the previous screen's camera session is still being released when this
+    // screen asks for the camera, so `initialize()` throws once and succeeds a
+    // moment later. Retrying keeps the working camera the user sees from being
+    // preceded by an error message, and only a failure that survives every
+    // attempt is logged and shown.
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    for (int attempt = 1; attempt <= _cameraAttempts; attempt++) {
+      final CameraController controller = CameraController(
+        _cameras[_cameraIndex],
+        ResolutionPreset.veryHigh,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+
+      try {
+        await controller.initialize();
+        if (!mounted) {
+          await _disposeQuietly(controller);
+          return;
+        }
+        setState(() {
+          _camera = controller;
+          _starting = false;
+          _torchOn = false;
+          _error = null;
+        });
+        return;
+      } on Object catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        await _disposeQuietly(controller);
+        if (attempt == _cameraAttempts) {
+          break;
+        }
+        await Future<void>.delayed(Duration(milliseconds: 220 * attempt));
+        if (!mounted) {
+          return;
+        }
+      }
+    }
+
+    final Object error = lastError ?? 'The camera did not start.';
+    ErrorLogger.instance.logError(
+      error,
+      lastStackTrace ?? StackTrace.current,
+      source: ErrorLogSource.camera,
+      context: <String, Object?>{'attempts': _cameraAttempts},
     );
-
-    try {
-      await controller.initialize();
-    } on CameraException catch (error, stackTrace) {
-      ErrorLogger.instance.logError(
-        error,
-        stackTrace,
-        source: ErrorLogSource.camera,
-      );
-      await _disposeQuietly(controller);
-      _fail(_friendlyError(error));
-      return;
-    } on Object catch (error, stackTrace) {
-      ErrorLogger.instance.logError(
-        error,
-        stackTrace,
-        source: ErrorLogSource.camera,
-      );
-      await _disposeQuietly(controller);
-      _fail('The camera could not be started (${error.runtimeType}).');
-      return;
-    }
-
-    if (!mounted) {
-      await _disposeQuietly(controller);
-      return;
-    }
-
-    setState(() {
-      _camera = controller;
-      _starting = false;
-      _torchOn = false;
-    });
+    _fail(
+      error is CameraException
+          ? _friendlyError(error)
+          : 'The camera could not be started (${error.runtimeType}).',
+    );
   }
 
   // ---- capture ----
 
   Future<void> _capture() async {
     final CameraController? camera = _camera;
-    if (camera == null || _capturing || !camera.value.isInitialized) {
+    final CaptureView view = _currentView;
+    if (camera == null ||
+        _capturing ||
+        !camera.value.isInitialized ||
+        view == CaptureView.complete) {
       return;
     }
 
@@ -257,37 +302,120 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
       return;
     }
 
-    final String path = capturedPath;
-
-    // Release the camera while MediaPipe works.
+    // The camera stays open: all three photos are taken first, and MediaPipe
+    // only runs once the set is complete. That keeps the preview alive between
+    // angles instead of dropping to a black screen after every shot.
     setState(() {
-      _camera = null;
       _capturing = false;
-      _starting = true;
+      _error = null;
+      _shots[view] = capturedPath!;
+      _viewResults[view] = ViewResult(
+        status: ViewStatus.captured,
+        photoPath: capturedPath,
+      );
+      _justCaptured = view;
     });
+
+    final bool haveAll = _captureOrder.every(
+      (CaptureView v) => _shots.containsKey(v),
+    );
+
+    // Leave the confirmation on screen long enough to be seen before the guide
+    // moves on.
+    await Future<void>.delayed(const Duration(milliseconds: 420));
+    if (!mounted) {
+      return;
+    }
+    setState(() => _justCaptured = null);
+
+    if (haveAll) {
+      await _startAnalysis();
+      return;
+    }
+
+    _advance();
+  }
+
+  // ---- analysis pass ----
+
+  /// Close the camera and read every captured view, one at a time, with visible
+  /// progress. Called once all three photos exist.
+  Future<void> _startAnalysis() async {
+    final CameraController? camera = _camera;
+    final int pending = _captureOrder
+        .where((CaptureView v) => _viewResults[v]?.status != ViewStatus.accepted)
+        .length;
+
+    setState(() {
+      _phase = _ScanPhase.analysing;
+      _camera = null;
+      _starting = true;
+      _capturing = false;
+      _error = null;
+      _analysingView = null;
+      _analysedCount = 0;
+      _analyseTotal = pending == 0 ? 1 : pending;
+    });
+
     await _disposeQuietly(camera);
     if (!mounted) {
       return;
     }
-
-    // Analyse this view.
-    await _analyseView(path);
+    await _analyseShots();
   }
 
-  // ---- detection + validation ----
+  /// MediaPipe reads each view in turn. Views already accepted are skipped, so
+  /// retaking one angle does not redo the other two.
+  Future<void> _analyseShots() async {
+    for (final CaptureView view in _captureOrder) {
+      final String? path = _shots[view];
+      if (path == null) {
+        continue;
+      }
+      if (_viewResults[view]?.status == ViewStatus.accepted) {
+        continue;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _analysingView = view;
+        _viewResults[view] = ViewResult(
+          status: ViewStatus.analysing,
+          photoPath: path,
+        );
+      });
+      await _analyseShot(view, path);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _analysedCount += 1;
+        _analysingView = null;
+      });
+    }
 
-  Future<void> _analyseView(String path) async {
     if (!mounted) {
       return;
     }
-    setState(() {
-      _viewResults[_currentView] = ViewResult(
-        status: ViewStatus.analysing,
-        photoPath: path,
-      );
-      _currentPhotoPath = null;
-    });
 
+    final bool allAccepted = _captureOrder.every(
+      (CaptureView v) => _viewResults[v]?.status == ViewStatus.accepted,
+    );
+
+    if (allAccepted) {
+      await _generateReport();
+      return;
+    }
+
+    // Something was rejected: show what passed, what did not, and let the user
+    // retake just that angle.
+    setState(() => _phase = _ScanPhase.summary);
+  }
+
+  /// Read one captured view and store the result. Never throws: a rejected view
+  /// is a state, not a crash.
+  Future<void> _analyseShot(CaptureView view, String path) async {
     try {
       // Prepare the photo (upright, 1080x1080 square) for detection.
       final PreparedPhoto photo = await const PhotoPreparer().preparePath(path);
@@ -298,25 +426,29 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
         photo.path,
         imageAspectRatio: 1.0,
       );
+      if (!mounted) {
+        return;
+      }
       if (attached == null) {
-        if (!mounted) return;
         setState(() {
-          _viewResults[_currentView] = ViewResult(
+          _shots.remove(view);
+          _viewResults[view] = ViewResult(
             status: ViewStatus.rejected,
-            errorMessage: 'No face detected. Center your face and try again.',
+            errorMessage:
+                'No face in the ${_viewName(view)} view. Fill the guide and '
+                'retake it in even light.',
             photoPath: path,
           );
         });
         return;
       }
 
-      // Package a session result from this view.
       final ViewResult result = ViewResult(
         status: ViewStatus.accepted,
         photoPath: photo.path,
         meshReading: attached.meshReading,
         mediaPipeReading: MediaPipeScanReading(
-          view: _currentView,
+          view: view,
           mediaPipeResult: attached.mediaPipeReading.mediaPipeResult,
           imageAspectRatio: attached.mediaPipeReading.imageAspectRatio,
           imageHeight: attached.mediaPipeReading.imageHeight,
@@ -326,33 +458,22 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
         sourceHeight: photo.sourceHeight,
       );
 
-      if (!mounted) {
-        return;
-      }
       setState(() {
-        _viewResults[_currentView] = result;
-        _currentPhotoPath = photo.path;
+        _viewResults[view] = result;
+        _shots[view] = photo.path;
       });
-
-      // Move to the next view, or straight into the analysis once the last
-      // view is in — the same capture-then-analyse hand-off the ML Kit scanner
-      // uses.
-      _advance();
-      if (_currentView == CaptureView.complete) {
-        await _generateReport();
-      }
     } on FacialAnalysisException catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
-        _viewResults[_currentView] = ViewResult(
+        _shots.remove(view);
+        _viewResults[view] = ViewResult(
           status: ViewStatus.rejected,
           errorMessage: error.message,
           photoPath: path,
         );
       });
-      // Keep the current view so the user can retake it.
     } on Object catch (error, stackTrace) {
       ErrorLogger.instance.logError(
         error,
@@ -363,13 +484,28 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
         return;
       }
       setState(() {
-        _viewResults[_currentView] = ViewResult(
+        _shots.remove(view);
+        _viewResults[view] = ViewResult(
           status: ViewStatus.rejected,
           errorMessage: 'Analysis failed (${error.runtimeType})',
           photoPath: path,
         );
       });
     }
+  }
+
+  /// Take a single view again from the summary screen.
+  void _retakeView(CaptureView view) {
+    setState(() {
+      _phase = _ScanPhase.capturing;
+      _currentView = view;
+      _viewResults[view] = const ViewResult(status: ViewStatus.pending);
+      _shots.remove(view);
+      _analysingView = null;
+      _error = null;
+      _starting = true;
+    });
+    unawaited(_startCamera());
   }
 
   void _advance() {
@@ -393,36 +529,36 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
   void _retakeCurrent() {
     setState(() {
       _viewResults[_currentView] = const ViewResult(status: ViewStatus.pending);
-      _currentPhotoPath = null;
     });
     // Restart the camera for this view.
     unawaited(_startCamera());
   }
 
   void _cancelSession() {
-    setState(() {
-      _currentView = CaptureView.front;
-      for (final CaptureView key in _viewResults.keys) {
-        _viewResults[key] = const ViewResult(status: ViewStatus.pending);
-      }
-      _currentPhotoPath = null;
-      _error = null;
-      _starting = true;
-    });
+    _resetSession();
     unawaited(_startCamera());
   }
 
   void _startNewSession() {
+    _resetSession();
+    unawaited(_startCamera());
+  }
+
+  void _resetSession() {
     setState(() {
+      _phase = _ScanPhase.capturing;
       _currentView = CaptureView.front;
       for (final CaptureView key in _viewResults.keys) {
         _viewResults[key] = const ViewResult(status: ViewStatus.pending);
       }
-      _currentPhotoPath = null;
+      _shots.clear();
+      _analysingView = null;
+      _analysedCount = 0;
+      _justCaptured = null;
+      _navigationPending = false;
       _error = null;
       _starting = true;
     });
-    unawaited(_startCamera());
   }
 
   // ---- navigation ----
@@ -453,7 +589,7 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
       return;
     }
 
-    if (!mounted) {
+    if (!mounted || _navigationPending) {
       return;
     }
     setState(() => _navigationPending = true);
@@ -469,8 +605,13 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_currentView == CaptureView.complete && !_navigationPending) {
-      return _buildCompleteBody();
+    switch (_phase) {
+      case _ScanPhase.analysing:
+        return _buildAnalysingBody();
+      case _ScanPhase.summary:
+        return _buildCompleteBody();
+      case _ScanPhase.capturing:
+        break;
     }
     final CameraController? camera = _camera;
     final bool ready = camera != null && camera.value.isInitialized;
@@ -484,12 +625,11 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
           onPressed: _cancelSession,
         ),
         actions: [
-          if (_currentView != CaptureView.complete)
-            TextButton(
-              onPressed:
-                  _camera != null && !_capturing && !_starting ? _retakeCurrent : null,
-              child: const Text('Retake'),
-            ),
+          TextButton(
+            onPressed:
+                _camera != null && !_capturing && !_starting ? _retakeCurrent : null,
+            child: const Text('Retake'),
+          ),
         ],
       ),
       body: Stack(
@@ -579,8 +719,7 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
                       ),
                     ),
                   if (_error == null &&
-                      _currentView != CaptureView.complete &&
-                      _currentPhotoPath != null)
+                      _viewResults[_currentView]?.status == ViewStatus.rejected)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                       child: _ViewStatusCard(
@@ -592,6 +731,7 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
                     starting: _starting,
                     capturing: _capturing,
                     ready: ready,
+                    hint: _hintText(),
                     onCapture:
                         ready && !_capturing && !_starting ? _capture : null,
                     onCancel: _cancelSession,
@@ -608,12 +748,122 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
     );
   }
 
+  /// Visible progress for the MediaPipe pass, so nobody is left looking at a
+  /// frozen screen wondering whether anything is happening.
+  Widget _buildAnalysingBody() {
+    final double progress =
+        (_analyseTotal == 0 ? 0.0 : _analysedCount / _analyseTotal)
+            .clamp(0.0, 1.0);
+    final CaptureView? view = _analysingView;
+    final String label = view == null
+        ? (_analysedCount >= _analyseTotal
+            ? 'Finishing the report…'
+            : 'Preparing the photos…')
+        : 'Analysing ${_viewName(view).toLowerCase()} view'
+            ' ${(_analysedCount + 1).clamp(1, _analyseTotal)} of $_analyseTotal';
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                'MEDIAPIPE FACE SCAN',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.6,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              Center(
+                child: SizedBox(
+                  width: 132,
+                  height: 132,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: <Widget>[
+                      SizedBox.expand(
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 4,
+                          backgroundColor: AppColors.surfaceHigh,
+                          color: AppColors.accent,
+                        ),
+                      ),
+                      Text(
+                        '${(progress * 100).round()}%',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 26),
+              Center(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'Reading 478 landmarks on each photo. This takes a few '
+                    'seconds — keep the app open.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              for (final CaptureView view in _captureOrder)
+                _CompleteRow(
+                  view: view,
+                  label: _viewName(view),
+                  result: _viewResults[view] ??
+                      const ViewResult(status: ViewStatus.pending),
+                ),
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton(
+                  onPressed: _startNewSession,
+                  child: const Text('Start over'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCompleteBody() {
-    final bool allAccepted = [
-      _viewResults[CaptureView.front],
-      _viewResults[CaptureView.left34],
-      _viewResults[CaptureView.right34],
-    ].every((ViewResult? r) => r != null && r.status == ViewStatus.accepted);
+    final bool allAccepted = _captureOrder.every(
+      (CaptureView v) => _viewResults[v]?.status == ViewStatus.accepted,
+    );
+    final int rejected = _captureOrder
+        .where((CaptureView v) => _viewResults[v]?.status != ViewStatus.accepted)
+        .length;
 
     return Stack(
       fit: StackFit.expand,
@@ -628,7 +878,7 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
           ),
         ),
         Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -645,7 +895,11 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
                 Text(
                   allAccepted
                       ? 'All three views passed. Generate the report below.'
-                      : 'Not every view was accepted. Capture the missing views to continue.',
+                      : rejected == 1
+                          ? 'One view could not be read. Retake just that '
+                              'angle and the report can be generated.'
+                          : '$rejected views could not be read. Retake them and '
+                              'the report can be generated.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 13,
@@ -654,28 +908,18 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
                   ),
                 ),
                 const SizedBox(height: 28),
-                _CompleteRow(
-                  view: CaptureView.front,
-                  label: 'Front',
-                  result: _viewResults[CaptureView.front]!,
-                ),
-                _CompleteRow(
-                  view: CaptureView.left34,
-                  label: 'Left 3/4',
-                  result: _viewResults[CaptureView.left34]!,
-                ),
-                _CompleteRow(
-                  view: CaptureView.right34,
-                  label: 'Right 3/4',
-                  result: _viewResults[CaptureView.right34]!,
-                ),
+                for (final CaptureView view in _captureOrder)
+                  _CompleteRow(
+                    view: view,
+                    label: _viewName(view),
+                    result: _viewResults[view] ??
+                        const ViewResult(status: ViewStatus.pending),
+                    onRetake: _viewResults[view]?.status == ViewStatus.accepted
+                        ? null
+                        : () => _retakeView(view),
+                  ),
                 const SizedBox(height: 24),
-                if (!allAccepted)
-                  OutlinedButton(
-                    onPressed: _startNewSession,
-                    child: const Text('Start new session'),
-                  )
-                else
+                if (allAccepted)
                   FilledButton(
                     onPressed: _generateReport,
                     child: const Text('Generate Report'),
@@ -691,6 +935,38 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
         ),
       ],
     );
+  }
+
+  String _viewName(CaptureView view) {
+    return switch (view) {
+      CaptureView.front => 'Front',
+      CaptureView.left34 => 'Left 3/4',
+      CaptureView.right34 => 'Right 3/4',
+      CaptureView.complete => 'All views',
+    };
+  }
+
+  /// The one-line instruction under the preview: what to do right now.
+  String _hintText() {
+    final CaptureView? just = _justCaptured;
+    if (just != null) {
+      return '${_viewName(just)} captured · ${_nextPrompt(just)}';
+    }
+    return switch (_currentView) {
+      CaptureView.front => 'Look straight ahead · fill the guide · eyes level',
+      CaptureView.left34 => 'Turn your head slightly left · keep eyes level',
+      CaptureView.right34 => 'Turn your head slightly right · keep eyes level',
+      CaptureView.complete => 'All three views captured',
+    };
+  }
+
+  String _nextPrompt(CaptureView captured) {
+    return switch (captured) {
+      CaptureView.front => 'now turn slightly to your left',
+      CaptureView.left34 => 'now turn slightly to your right',
+      CaptureView.right34 => 'analysing all three views…',
+      CaptureView.complete => 'analysing all three views…',
+    };
   }
 
   String _viewLabel() {
@@ -841,12 +1117,46 @@ class _PreviewPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
+    // A black rectangle looks like a broken camera. Say what is happening
+    // instead, so a slow start reads as loading rather than as a failure.
+    return DecoratedBox(
+      decoration: const BoxDecoration(
         gradient: RadialGradient(
           center: Alignment(0, -0.3),
           radius: 1.1,
           colors: <Color>[AppColors.surfaceHigh, AppColors.background],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: AppColors.accent,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Starting the camera…',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary.withValues(alpha: 0.9),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'The first start can take a second.',
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.textTertiary,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1049,6 +1359,7 @@ class _BottomBar extends StatelessWidget {
     required this.starting,
     required this.capturing,
     required this.ready,
+    required this.hint,
     required this.onCapture,
     required this.onCancel,
     required this.onSwitch,
@@ -1059,6 +1370,7 @@ class _BottomBar extends StatelessWidget {
   final bool starting;
   final bool capturing;
   final bool ready;
+  final String hint;
   final VoidCallback? onCapture;
   final VoidCallback onCancel;
   final VoidCallback? onSwitch;
@@ -1072,7 +1384,7 @@ class _BottomBar extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (!capturing) const _GuideHint(),
+          if (!capturing) _GuideHint(text: hint),
           const SizedBox(height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1105,6 +1417,11 @@ class _BottomBar extends StatelessWidget {
     );
   }
 }
+
+/// Where a session is. The three photos are collected first, then MediaPipe
+/// reads them in one visible pass, then anything rejected is reported for a
+/// single-angle retake.
+enum _ScanPhase { capturing, analysing, summary }
 
 // ------------------------------------------------------- progress strip
 
@@ -1168,17 +1485,21 @@ class _StripStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool done = status == ViewStatus.accepted;
+    final bool accepted = status == ViewStatus.accepted;
+    final bool captured = status == ViewStatus.captured;
+    final bool done = accepted || captured;
     final bool busy = status == ViewStatus.analysing ||
         status == ViewStatus.capturing;
-    final bool isActive = busy || (status == ViewStatus.pending && current);
-    final Color color = done
+    final bool isActive = busy || ((status == ViewStatus.pending) && current);
+    final Color color = accepted
         ? AppColors.mint
-        : busy
+        : captured
             ? AppColors.accent
-            : isActive
+            : busy
                 ? AppColors.accent
-                : AppColors.textTertiary;
+                : isActive
+                    ? AppColors.accent
+                    : AppColors.textTertiary;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1194,12 +1515,12 @@ class _StripStep extends StatelessWidget {
             width: 12,
             height: 12,
             child: done
-                ? const DecoratedBox(
+                ? DecoratedBox(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.mint,
+                      color: accepted ? AppColors.mint : AppColors.accent,
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.check_rounded,
                       size: 9,
                       color: AppColors.background,
@@ -1267,6 +1588,12 @@ class _ViewStatusCard extends StatelessWidget {
         tint = AppColors.accent;
         label = 'Analysing';
         detail = 'MediaPipe is reading the photo…';
+        break;
+      case ViewStatus.captured:
+        tint = AppColors.accent;
+        label = 'Captured';
+        detail = 'Photo taken. MediaPipe reads all three views together at '
+            'the end.';
         break;
       case ViewStatus.rejected:
         tint = AppColors.danger;
@@ -1338,11 +1665,15 @@ class _CompleteRow extends StatelessWidget {
     required this.view,
     required this.label,
     required this.result,
+    this.onRetake,
   });
 
   final CaptureView view;
   final String label;
   final ViewResult result;
+
+  /// Present only when this view has to be taken again.
+  final VoidCallback? onRetake;
 
   @override
   Widget build(BuildContext context) {
@@ -1377,18 +1708,38 @@ class _CompleteRow extends StatelessWidget {
           ),
           const Spacer(),
           Text(
-            result.status == ViewStatus.accepted
-                ? 'Accepted'
-                : result.status == ViewStatus.rejected
-                    ? 'Rejected'
-                    : result.status == ViewStatus.analysing
-                        ? 'Analysing'
-                        : 'Pending',
+            switch (result.status) {
+              ViewStatus.accepted => 'Accepted',
+              ViewStatus.rejected => 'Rejected',
+              ViewStatus.analysing => 'Analysing',
+              ViewStatus.captured => 'Captured',
+              ViewStatus.capturing => 'Capturing',
+              ViewStatus.pending => 'Pending',
+            },
             style: TextStyle(
               fontSize: 12,
               color: color.withValues(alpha: 0.8),
             ),
           ),
+          if (onRetake != null) ...<Widget>[
+            const SizedBox(width: 6),
+            TextButton(
+              onPressed: onRetake,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text(
+                'Retake',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.accent,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1398,7 +1749,9 @@ class _CompleteRow extends StatelessWidget {
 // ------------------------------------------------------- shared UI bits
 
 class _GuideHint extends StatelessWidget {
-  const _GuideHint();
+  const _GuideHint({required this.text});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -1411,21 +1764,21 @@ class _GuideHint extends StatelessWidget {
         border:
             Border.all(color: Colors.white.withValues(alpha: 0.09)),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
+          const Icon(
             Icons.wb_sunny_outlined,
             size: 14,
             color: AppColors.textSecondary,
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           Flexible(
             child: Text(
-              'Fill the guide · eyes level · neutral face',
+              text,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: AppColors.textSecondary,

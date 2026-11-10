@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 /// `pubspec.yaml` by hand — it is only there so a shared log says which build
 /// produced it, and a const keeps this file free of another plugin just for a
 /// version string.
-const String kAppVersion = '3.1.1+8';
+const String kAppVersion = '3.2.0+9';
 
 /// Only real problems are recorded. Info and debug lines are never logged:
 /// they would bury the failures that matter and grow the file for nothing.

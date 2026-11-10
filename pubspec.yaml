@@ -4,7 +4,7 @@ description: >-
   runs on the device through ML Kit; every measurement and score is computed
   locally in Dart. No network calls, no accounts, no uploads.
 publish_to: "none"
-version: 3.1.0+7
+version: 3.1.1+8
 
 environment:
   sdk: ^3.9.0
@@ -37,6 +37,8 @@ dependencies:
   share_plus: ^13.3.1
   device_info_plus: ^13.3.0
 
+  # Direct use in the error logger, image store and scan history.
+  path_provider: ^2.1.6
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -45,4 +47,3 @@ dev_dependencies:
 flutter:
   uses-material-design: true  # MediaPipe model assets are bundled at pub get time; the task file
   # is provided with the application and not included in this workspace.
-  assets:

@@ -13,8 +13,8 @@ void main() {
     // gradient is invalid (three colours without colourStops), paint()
     // throws ArgumentError and the test fails.
     await tester.pumpWidget(
-      MaterialApp(
-        home: const Scaffold(
+      const MaterialApp(
+        home: Scaffold(
           body: CustomPaint(
             painter: ScanningPainter(progress: 0.45, meshOpacity: 0.8),
           ),
@@ -40,7 +40,7 @@ void main() {
         );
 
         final ui.PictureRecorder recorder = ui.PictureRecorder();
-        final Canvas canvas = Canvas(recorder, Rect.fromLTWH(0, 0, 200, 200));
+        final Canvas canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, 200, 200));
 
         // This is the path that used to throw:
         //   Gradient._validateColorStops ->
@@ -54,22 +54,22 @@ void main() {
     }
 
     test('paints smaller size without throwing', () {
-      final ScanningPainter painter = ScanningPainter(
+      final ScanningPainter painter = const ScanningPainter(
         progress: 0.6,
         meshOpacity: 0.5,
       );
       final ui.PictureRecorder recorder = ui.PictureRecorder();
-      final Canvas canvas = Canvas(recorder, Rect.fromLTWH(0, 0, 100, 100));
+      final Canvas canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, 100, 100));
       painter.paint(canvas, const Size(100, 100));
     });
 
     test('paints with alpha fade without throwing', () {
-      final ScanningPainter painter = ScanningPainter(
+      final ScanningPainter painter = const ScanningPainter(
         progress: 0.3,
         meshOpacity: 0.15,
       );
       final ui.PictureRecorder recorder = ui.PictureRecorder();
-      final Canvas canvas = Canvas(recorder, Rect.fromLTWH(0, 0, 200, 200));
+      final Canvas canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, 200, 200));
       painter.paint(canvas, const Size(200, 200));
     });
   });

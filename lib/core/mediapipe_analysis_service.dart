@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
-
 import '../ml/mediapipe_face_landmarker.dart';
+import '../ml/mediapipe_types.dart';
+import 'vector.dart';
 
 /// MediaPipe-aware geometry from a [MediaPipeScanReading].
 ///
@@ -161,7 +161,7 @@ class MediaPipeAnalysisService {
       notes.add('Front view passed frontal quality checks.');
     }
 
-    final double? yawSweep = _yawSweep(left.pose?.yawDeg, right.pose?.yawDeg);
+    final double yawSweep = _yawSweep(left.pose?.yawDeg, right.pose?.yawDeg);
     crossView['yawSweepDeg'] = yawSweep;
 
     crossView['zNote'] =
@@ -188,11 +188,6 @@ class MediaPipeAnalysisService {
   }
 
   // ---- private helpers ----
-
-  static double _zFor(MediaPipeFaceLandmarks face, int index) {
-    if (index < 0 || index >= face.length) return 0.0;
-    return face[index].z;
-  }
 
   static bool _allFinite(MediaPipeFaceLandmarks face) {
     final int len = face.length;
@@ -296,8 +291,11 @@ class MediaPipeAnalysisService {
     final double mag = eyeVec.magnitude;
     if (mag <= minScale) return 0.0;
     double deg = math.atan2(eyeVec.y, eyeVec.x) * 180 / math.pi;
-    if (deg > 90) deg -= 180;
-    else if (deg <= -90) deg += 180;
+    if (deg > 90) {
+      deg -= 180;
+    } else if (deg <= -90) {
+      deg += 180;
+    }
     return deg;
   }
 
@@ -489,7 +487,7 @@ class MediaPipeBlendshapeInfo {
     this.empty = true,
   });
 
-  static const MediaPipeBlendshapeInfo empty() = MediaPipeBlendshapeInfo();
+  const MediaPipeBlendshapeInfo.empty() : this();
 
   final String dominantCategory;
   final double dominantScore;

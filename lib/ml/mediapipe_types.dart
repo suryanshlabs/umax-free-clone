@@ -8,7 +8,7 @@ import 'package:facial_analysis/ml/face_mesh_source.dart';
 import 'package:facial_analysis/ml/mediapipe_face_landmarker.dart';
 // Re-export the real MediaPipe value types so callers can use the canonical
 // names without re-importing mediapipe_core everywhere.
-export 'package:mediapipe_core/mediapipe_core.dart'
+export 'package:mediapipe_vision/mediapipe_vision.dart'
     show
         NormalizedLandmark,
         Landmark,

@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import 'package:mediapipe_core/mediapipe_core.dart';
 import 'package:mediapipe_vision/mediapipe_vision.dart';
-import 'package:mediapipe_vision/src/types/vision_types.dart' show VisionImage;
 
 import 'package:facial_analysis/core/error_logger.dart';
 
@@ -11,7 +9,7 @@ import 'package:facial_analysis/core/error_logger.dart';
 // names without re-importing mediapipe_core everywhere.
 // ---------------------------------------------------------------------------
 
-export 'package:mediapipe_core/mediapipe_core.dart'
+export 'package:mediapipe_vision/mediapipe_vision.dart'
     show
         NormalizedLandmark,
         Landmark,

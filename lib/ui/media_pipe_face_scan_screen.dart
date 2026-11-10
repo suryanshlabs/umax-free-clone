@@ -13,7 +13,8 @@ import '../ml/mediapipe_types.dart';
 import '../ml/photo_prep.dart';
 import 'processing_screen.dart';
 import 'theme.dart';
-import '../ml/mediapipe_types.dart' show MediaPipeAttachedReading, MediaPipeScanReading, CaptureView, ViewStatus;
+import '../ml/mediapipe_types.dart'
+    show MediaPipeAttachedReading, MediaPipeScanReading, CaptureView, ViewStatus;
 
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,10 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
 
   // The prepared square path of the currently analysed view, for the fade.
   String? _currentPhotoPath;
+
+  // True while the last accepted view is handing over to the analysis screen,
+  // so the capture view is never swapped for the summary in between.
+  bool _navigationPending = false;
 
   @override
   void initState() {
@@ -329,8 +334,13 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
         _currentPhotoPath = photo.path;
       });
 
-      // Move to next view or complete.
+      // Move to the next view, or straight into the analysis once the last
+      // view is in — the same capture-then-analyse hand-off the ML Kit scanner
+      // uses.
       _advance();
+      if (_currentView == CaptureView.complete) {
+        await _generateReport();
+      }
     } on FacialAnalysisException catch (error) {
       if (!mounted) {
         return;
@@ -446,6 +456,7 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
     if (!mounted) {
       return;
     }
+    setState(() => _navigationPending = true);
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (BuildContext context) =>
@@ -458,9 +469,11 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_currentView == CaptureView.complete) {
+    if (_currentView == CaptureView.complete && !_navigationPending) {
       return _buildCompleteBody();
     }
+    final CameraController? camera = _camera;
+    final bool ready = camera != null && camera.value.isInitialized;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -483,19 +496,15 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
         fit: StackFit.expand,
         children: <Widget>[
           // Live camera preview.
-          if (_camera != null && _camera!.value.isInitialized)
-            _CameraPreview(controller: _camera!)
+          if (ready)
+            _CameraPreview(controller: camera)
           else
             const _PreviewPlaceholder(),
 
-          // Guide overlay pinned to the face region.
-          if (_camera != null && _camera!.value.isInitialized)
-            _GuideOverlay(
-              view: _currentView,
-              pulse: _pulse,
-            ),
+          // Guide overlay drawn over the whole preview.
+          if (ready) _GuideOverlay(view: _currentView, pulse: _pulse),
 
-          // Top bar.
+          // Top bar: title, view counter and the three-view progress strip.
           Positioned(
             top: 0,
             left: 0,
@@ -503,39 +512,47 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Row(
                       children: <Widget>[
-                        const Text(
-                          'MEDIAPIPE FACE SCAN',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 2.2,
-                            color: AppColors.textPrimary,
+                        const Flexible(
+                          child: Text(
+                            'MEDIAPIPE FACE SCAN',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.6,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 12),
                         const Spacer(),
-                        Text(
-                          _viewLabel(),
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            color: AppColors.textSecondary,
-                            letterSpacing: 0.4,
+                        Flexible(
+                          child: Text(
+                            _viewLabel(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.4,
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 24),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Expanded(
-                      child: _ProgressStrip(
-                        current: _currentView,
-                        currentProvider: () => _currentView,
-                        views: _viewResults,
-                      ),
+                    const SizedBox(height: 10),
+                    _ProgressStrip(
+                      current: _currentView,
+                      views: _viewResults,
                     ),
                   ],
                 ),
@@ -543,44 +560,49 @@ class _MediaPipeFaceScanScreenState extends State<MediaPipeFaceScanScreen>
             ),
           ),
 
-          // Bottom controls.
+          // Bottom stack: any message, then the capture controls.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: SafeArea(
               top: false,
-              child: _BottomBar(
-                starting: _starting,
-                capturing: _capturing,
-                onCapture: _capture,
-                onSwitch: _cameras.length > 1 ? _switchCamera : null,
-                torchOn: _torchOn,
-                onTorch: _toggleTorch,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      child: _ErrorBanner(
+                        message: _error!,
+                        onRetry: () => unawaited(_bootstrap()),
+                      ),
+                    ),
+                  if (_error == null &&
+                      _currentView != CaptureView.complete &&
+                      _currentPhotoPath != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      child: _ViewStatusCard(
+                        result: _viewResults[_currentView] ??
+                            const ViewResult(status: ViewStatus.pending),
+                      ),
+                    ),
+                  _BottomBar(
+                    starting: _starting,
+                    capturing: _capturing,
+                    ready: ready,
+                    onCapture:
+                        ready && !_capturing && !_starting ? _capture : null,
+                    onCancel: _cancelSession,
+                    onSwitch: _cameras.length > 1 ? _switchCamera : null,
+                    torchOn: _torchOn,
+                    onTorch: ready ? _toggleTorch : null,
+                  ),
+                ],
               ),
             ),
           ),
-
-          // Error banner.
-          if (_error != null)
-            Positioned(
-              top: 60,
-              left: 16,
-              right: 16,
-              child: _ErrorBanner(
-                message: _error!,
-                onRetry: () => unawaited(_bootstrap()),
-              ),
-            ),
-
-          // Status for the current view after capture.
-          if (_currentView != CaptureView.complete && _currentPhotoPath != null)
-            Positioned(
-              top: 200,
-              left: 16,
-              right: 16,
-              child: _ViewStatusCard(result: _viewResults[_currentView]!),
-            ),
         ],
       ),
     );
@@ -844,211 +866,179 @@ class _GuideOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String title;
-    final String body;
-    final List<_Stroke> strokes;
+    final (String title, String body, double shift) = switch (view) {
+      CaptureView.front => (
+          'Front view',
+          'Face the camera directly. Eyes level, neutral expression, whole face inside the oval.',
+          0.0,
+        ),
+      CaptureView.left34 => (
+          'Left 3/4',
+          'Turn your head slightly to your left. Eyes level, chin centred, ear still visible.',
+          -0.12,
+        ),
+      CaptureView.right34 => (
+          'Right 3/4',
+          'Turn your head slightly to your right. Eyes level, chin centred, ear still visible.',
+          0.12,
+        ),
+      CaptureView.complete => ('', '', 0.0),
+    };
 
-    switch (view) {
-      case CaptureView.front:
-        title = 'Front view';
-        body =
-            'Face the camera directly. Eyes level, neutral expression, whole face in frame.';
-        strokes = _frontStrokes();
-      case CaptureView.left34:
-        title = 'Left 3/4';
-        body =
-            'Turn your head slightly to your left. Keep your eyes level and your chin roughly centred.';
-        strokes = _sideStrokes(left: true);
-      case CaptureView.right34:
-        title = 'Right 3/4';
-        body =
-            'Turn your head slightly to your right. Keep your eyes level and your chin roughly centred.';
-        strokes = _sideStrokes(left: false);
-      default:
-        title = '';
-        body = '';
-        strokes = const <_Stroke>[];
-    }
-
-    return AnimatedBuilder(
-      animation: pulse,
-      builder: (BuildContext context, Widget? child) {
-        return CustomPaint(
-          painter: _GuidePainter(
-            title: title,
-            body: body,
-            strokes: strokes,
-            pulse: Curves.easeInOut.transform(pulse.value),
-          ),
-          size: Size.infinite,
-        );
-      },
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: pulse,
+        builder: (BuildContext context, Widget? child) {
+          return CustomPaint(
+            painter: _GuidePainter(
+              title: title,
+              body: body,
+              shift: shift,
+              pulse: Curves.easeInOut.transform(pulse.value),
+            ),
+          );
+        },
+      ),
     );
-  }
-
-  static List<_Stroke> _frontStrokes() {
-    return <_Stroke>[
-      _Stroke.oval(
-        center: const Offset(154, 620),
-        rx: 86,
-        ry: 112,
-        style: _StrokeStyle.outline,
-      ),
-      _Stroke.line(
-        from: const Offset(90, 540),
-        to: const Offset(218, 540),
-        style: _StrokeStyle.dots,
-      ),
-      _Stroke.line(
-        from: const Offset(154, 500),
-        to: const Offset(154, 740),
-        style: _StrokeStyle.dots,
-      ),
-    ];
-  }
-
-  static List<_Stroke> _sideStrokes({required bool left}) {
-    final double cx = left ? 90 : 218;
-    final double dir = left ? -1.0 : 1.0;
-    return <_Stroke>[
-      _Stroke.oval(
-        center: Offset(cx, 620),
-        rx: 70,
-        ry: 96,
-        style: _StrokeStyle.outline,
-      ),
-      _Stroke.line(
-        from: Offset(cx - 40 * dir, 560),
-        to: Offset(cx + 40 * dir, 560),
-        style: _StrokeStyle.dots,
-      ),
-      _Stroke.line(
-        from: Offset(cx, 520),
-        to: Offset(cx, 720),
-        style: _StrokeStyle.dots,
-      ),
-    ];
   }
 }
-
-class _Stroke {
-  const _Stroke._({
-    required this.type,
-    required this.style,
-    this.params = const <double>[],
-  });
-  factory _Stroke.oval({
-    required Offset center,
-    required double rx,
-    required double ry,
-    required _StrokeStyle style,
-  }) {
-    return _Stroke._(
-      type: 'oval',
-      style: style,
-      params: [center.dx, center.dy, rx, ry],
-    );
-  }
-  factory _Stroke.line({
-    required Offset from,
-    required Offset to,
-    required _StrokeStyle style,
-  }) {
-    return _Stroke._(
-      type: 'line',
-      style: style,
-      params: [from.dx, from.dy, to.dx, to.dy],
-    );
-  }
-
-  final String type;
-  final _StrokeStyle style;
-  final List<double> params;
-}
-
-enum _StrokeStyle { outline, dots }
 
 class _GuidePainter extends CustomPainter {
   _GuidePainter({
     required this.title,
     required this.body,
-    required this.strokes,
+    required this.shift,
     required this.pulse,
   });
 
   final String title;
   final String body;
-  final List<_Stroke> strokes;
+  final double shift;
   final double pulse;
+
+  /// The oval the user is asked to fill, derived from the preview size so it
+  /// lands on the face on every screen instead of a fixed pixel position.
+  static Rect guideRect(Size size, double shift) {
+    final double width = math.min(size.width * 0.72, size.height * 0.42);
+    final double height = width * 1.30;
+    return Rect.fromCenter(
+      center: Offset(
+        size.width * (0.5 + shift),
+        size.height * 0.40,
+      ),
+      width: width,
+      height: height,
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint outline = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..color = AppColors.accent.withValues(alpha: 0.55 + 0.2 * pulse);
-    final Paint dots = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..color = AppColors.accentSoft.withValues(alpha: 0.7);
-
-    for (final _Stroke s in strokes) {
-      switch (s.type) {
-        case 'oval':
-          canvas.drawOval(
-            Rect.fromCenter(
-              center: Offset(s.params[0], s.params[1]),
-              width: s.params[2] * 2,
-              height: s.params[3] * 2,
-            ),
-            s.style == _StrokeStyle.outline ? outline : dots,
-          );
-          break;
-        case 'line':
-          canvas.drawLine(
-            Offset(s.params[0], s.params[1]),
-            Offset(s.params[2], s.params[3]),
-            s.style == _StrokeStyle.outline ? outline : dots,
-          );
-          break;
-        default:
-          break;
-      }
+    if (size.width <= 0 || size.height <= 0) {
+      return;
     }
 
-    // Title + body text.
-    final double textY = 690.0;
-    final TextPainter titlePainter = TextPainter(
-      text: TextSpan(
-        text: title.toUpperCase(),
-        style: const TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.4,
-          color: AppColors.textPrimary,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    titlePainter.paint(canvas, Offset(16, textY - 34));
+    final Rect guide = guideRect(size, shift);
 
-    final TextPainter bodyPainter = TextPainter(
-      text: TextSpan(
-        text: body,
-        style: const TextStyle(
-          fontSize: 12,
-          height: 1.5,
-          color: AppColors.textSecondary,
+    // Dim everything outside the oval. The face stays the brightest thing on
+    // screen, and the instruction copy underneath stays readable whether the
+    // camera is looking at a bright wall or a dark room.
+    canvas.drawPath(
+      Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(Offset.zero & size)
+        ..addOval(guide),
+      Paint()..color = Colors.black.withValues(alpha: 0.52),
+    );
+
+    // Breathing outline.
+    canvas.drawOval(
+      guide,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4
+        ..color = AppColors.accent.withValues(alpha: 0.55 + 0.25 * pulse),
+    );
+
+    // Eye line and vertical midline.
+    _dash(
+      canvas,
+      Offset(guide.left + guide.width * 0.16, guide.top + guide.height * 0.40),
+      Offset(guide.right - guide.width * 0.16, guide.top + guide.height * 0.40),
+      Colors.white.withValues(alpha: 0.22),
+    );
+    _dash(
+      canvas,
+      Offset(guide.center.dx, guide.top + guide.height * 0.08),
+      Offset(guide.center.dx, guide.bottom - guide.height * 0.10),
+      Colors.white.withValues(alpha: 0.18),
+    );
+
+    // Instruction copy, pinned just under the oval and above the controls.
+    final double maxTextWidth = math.max(size.width - 32, 120);
+    final double textTop = math.min(
+      guide.bottom + 16,
+      size.height - 250,
+    );
+
+    if (title.isNotEmpty) {
+      final TextPainter titlePainter = TextPainter(
+        text: TextSpan(
+          text: title.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.4,
+            color: AppColors.textPrimary,
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: 288);
-    bodyPainter.paint(canvas, Offset(16, textY - 8));
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: maxTextWidth);
+      titlePainter.paint(canvas, Offset(16, math.max(textTop, 0)));
+
+      final TextPainter bodyPainter = TextPainter(
+        text: TextSpan(
+          text: body,
+          style: const TextStyle(
+            fontSize: 12,
+            height: 1.45,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: maxTextWidth);
+      bodyPainter.paint(
+        canvas,
+        Offset(16, math.max(textTop, 0) + titlePainter.height + 4),
+      );
+    }
+  }
+
+  void _dash(Canvas canvas, Offset from, Offset to, Color color) {
+    final Paint paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..strokeCap = StrokeCap.round;
+    const double dash = 6;
+    const double gap = 8;
+    final double total = (to - from).distance;
+    if (total <= 0) {
+      return;
+    }
+    final Offset step = (to - from) / total;
+    double travelled = 0;
+    while (travelled < total) {
+      final double end = math.min(travelled + dash, total);
+      canvas.drawLine(from + step * travelled, from + step * end, paint);
+      travelled = end + gap;
+    }
   }
 
   @override
   bool shouldRepaint(covariant _GuidePainter old) {
-    return old.pulse != pulse;
+    return old.pulse != pulse ||
+        old.title != title ||
+        old.body != body ||
+        old.shift != shift;
   }
 }
 
@@ -1058,7 +1048,9 @@ class _BottomBar extends StatelessWidget {
   const _BottomBar({
     required this.starting,
     required this.capturing,
+    required this.ready,
     required this.onCapture,
+    required this.onCancel,
     required this.onSwitch,
     required this.torchOn,
     required this.onTorch,
@@ -1066,41 +1058,45 @@ class _BottomBar extends StatelessWidget {
 
   final bool starting;
   final bool capturing;
+  final bool ready;
   final VoidCallback? onCapture;
+  final VoidCallback onCancel;
   final VoidCallback? onSwitch;
   final bool torchOn;
   final VoidCallback? onTorch;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 26),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (starting && !capturing) const _GuideHint(),
-          const SizedBox(height: 22),
+          if (!capturing) const _GuideHint(),
+          const SizedBox(height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: <Widget>[
-              const _CircleButton(
-                icon: Icons.arrow_back_rounded,
-                tooltip: 'Back to home',
-                onPressed: null,
+              _CircleButton(
+                icon: Icons.close_rounded,
+                tooltip: 'Cancel session',
+                onPressed: onCancel,
               ),
-              const _CircleButton(
+              _CircleButton(
                 icon: Icons.flip_camera_ios_rounded,
                 tooltip: 'Switch camera',
-                onPressed: null,
+                onPressed: onSwitch,
               ),
               _ShutterButton(
-                busy: starting || onCapture == null,
+                busy: starting || capturing || !ready,
                 onPressed: onCapture,
               ),
-              const _CircleButton(
-                icon: Icons.flash_off_rounded,
+              _CircleButton(
+                icon: torchOn
+                    ? Icons.flash_on_rounded
+                    : Icons.flash_off_rounded,
                 tooltip: 'Torch',
-                onPressed: null,
+                onPressed: onTorch,
               ),
             ],
           ),
@@ -1115,44 +1111,40 @@ class _BottomBar extends StatelessWidget {
 class _ProgressStrip extends StatelessWidget {
   const _ProgressStrip({
     required this.current,
-    required this.currentProvider,
     required this.views,
   });
 
   final CaptureView current;
-  final CaptureView Function() currentProvider;
   final Map<CaptureView, ViewResult> views;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double unit = (constraints.maxWidth - 20) / 3;
-        return Row(
-          children: <Widget>[
-            _StripStep(
-              label: 'Front',
-              x: unit,
-              status: _statusFor(CaptureView.front),
-              current: currentProvider() == CaptureView.front,
-            ),
-            const SizedBox(width: 10),
-            _StripStep(
-              label: 'Left 3/4',
-              x: unit * 2 + 10,
-              status: _statusFor(CaptureView.left34),
-              current: currentProvider() == CaptureView.left34,
-            ),
-            const SizedBox(width: 10),
-            _StripStep(
-              label: 'Right 3/4',
-              x: unit * 3 + 20,
-              status: _statusFor(CaptureView.right34),
-              current: currentProvider() == CaptureView.right34,
-            ),
-          ],
-        );
-      },
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _StripStep(
+            label: 'Front',
+            status: _statusFor(CaptureView.front),
+            current: current == CaptureView.front,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StripStep(
+            label: 'Left 3/4',
+            status: _statusFor(CaptureView.left34),
+            current: current == CaptureView.left34,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StripStep(
+            label: 'Right 3/4',
+            status: _statusFor(CaptureView.right34),
+            current: current == CaptureView.right34,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1166,57 +1158,80 @@ class _ProgressStrip extends StatelessWidget {
 class _StripStep extends StatelessWidget {
   const _StripStep({
     required this.label,
-    required this.x,
     required this.status,
     required this.current,
   });
 
   final String label;
-  final double x;
   final ViewStatus status;
   final bool current;
 
   @override
   Widget build(BuildContext context) {
     final bool done = status == ViewStatus.accepted;
-    final bool isActive = status == ViewStatus.analysing ||
-        status == ViewStatus.capturing ||
-        (status == ViewStatus.pending && current);
+    final bool busy = status == ViewStatus.analysing ||
+        status == ViewStatus.capturing;
+    final bool isActive = busy || (status == ViewStatus.pending && current);
     final Color color = done
         ? AppColors.mint
-        : isActive
+        : busy
             ? AppColors.accent
-            : AppColors.textTertiary;
+            : isActive
+                ? AppColors.accent
+                : AppColors.textTertiary;
 
-    return Positioned(
-      left: x,
-      top: 0,
-      child: Column(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Container(
+          SizedBox(
             width: 12,
             height: 12,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color,
-              border: Border.all(
-                  color: color.withValues(alpha: 0.5), width: 2),
-            ),
             child: done
-                ? const Icon(Icons.check_rounded, size: 8, color: Colors.white)
-                : isActive
-                    ? const CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white)
-                    : const SizedBox(width: 12, height: 12),
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.mint,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 9,
+                      color: AppColors.background,
+                    ),
+                  )
+                : busy
+                    ? CircularProgressIndicator(
+                        strokeWidth: 1.8,
+                        color: color,
+                      )
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.7),
+                            width: 1.6,
+                          ),
+                        ),
+                      ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              height: 1.2,
-              color: color,
-              fontWeight: FontWeight.w600,
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9.5,
+                height: 1.2,
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -1405,13 +1420,17 @@ class _GuideHint extends StatelessWidget {
             color: AppColors.textSecondary,
           ),
           SizedBox(width: 8),
-          Text(
-            'Fill the guide · eyes level · neutral face',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textSecondary,
-              letterSpacing: 0.1,
+          Flexible(
+            child: Text(
+              'Fill the guide · eyes level · neutral face',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.1,
+              ),
             ),
           ),
         ],
